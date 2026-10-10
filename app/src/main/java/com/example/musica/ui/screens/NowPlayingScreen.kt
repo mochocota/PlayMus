@@ -1,5 +1,6 @@
 package com.example.musica.ui.screens
 
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -17,6 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -41,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -67,7 +70,8 @@ import com.example.musica.ui.theme.Purple
 import com.example.musica.ui.theme.TextSecondary
 import com.example.musica.ui.theme.TrackColor
 import com.google.android.gms.cast.framework.CastButtonFactory
-import androidx.mediarouter.app.MediaRouteButton
+import com.google.android.gms.cast.framework.CastContext
+import com.google.android.gms.cast.framework.widgets.MediaRouteButton
 import kotlinx.coroutines.delay
 
 @Composable
@@ -87,6 +91,19 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
     var lyricsFail by remember { mutableStateOf(false) }
     var loadedFor by remember { mutableStateOf<Int?>(null) }
     var retry by remember { mutableStateOf(0) }
+
+    val context = LocalContext.current
+
+    // ¿Está disponible Google Cast en este dispositivo?
+    // Si no hay Play Services (algunos Xiaomi/Huawei) esto es false
+    val castUsable = remember {
+        try {
+            CastContext.getSharedInstance(context)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
 
     LaunchedEffect(showFavAnim) {
         if (showFavAnim) {
@@ -161,11 +178,14 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                         }
                         Spacer(Modifier.height(8.dp))
 
-                        val progress = if (dragging) dragValue
+                        // Slider blindado: evita valores inválidos (NaN) que tumban la app
+                        val rawProgress = if (dragging) dragValue
                         else if (vm.duration > 0) vm.position.toFloat() / vm.duration else 0f
+                        val progress = if (rawProgress.isNaN() || rawProgress < 0f) 0f
+                        else rawProgress.coerceAtMost(1f)
 
                         Slider(
-                            value = progress.coerceIn(0f, 1f),
+                            value = progress,
                             onValueChange = { dragging = true; dragValue = it },
                             onValueChangeFinished = { vm.seekTo(dragValue); dragging = false },
                             colors = SliderDefaults.colors(
@@ -213,16 +233,31 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically) {
 
-                            // ---------- Botón oficial de Google Cast ----------
-                            Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                                AndroidView(
-                                    modifier = Modifier.fillMaxSize(),
-                                    factory = { ctx ->
-                                        MediaRouteButton(ctx).apply {
-                                            CastButtonFactory.setUpMediaRouteButton(ctx, this)
+                            // ---------- Botón de Cast (blindado) ----------
+                            if (castUsable) {
+                                Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                                    AndroidView(
+                                        modifier = Modifier.fillMaxSize(),
+                                        factory = { ctx ->
+                                            try {
+                                                MediaRouteButton(ctx).apply {
+                                                    CastButtonFactory.setUpMediaRouteButton(ctx, this)
+                                                }
+                                            } catch (_: Exception) {
+                                                // Si algo falla al crear el botón, un View vacío
+                                                android.view.View(ctx)
+                                            }
                                         }
-                                    }
-                                )
+                                    )
+                                }
+                            } else {
+                                IconButton(onClick = {
+                                    Toast.makeText(context,
+                                        "Cast no disponible en este dispositivo",
+                                        Toast.LENGTH_SHORT).show()
+                                }) {
+                                    Icon(Icons.Filled.Cast, null, tint = TextSecondary)
+                                }
                             }
 
                             IconButton(onClick = { showLyrics = true }) {
