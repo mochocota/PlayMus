@@ -65,9 +65,10 @@ import com.example.musica.ui.theme.MusicaTheme
 import com.example.musica.ui.theme.NavyBg
 import com.example.musica.ui.theme.Purple
 import com.example.musica.ui.theme.TextSecondary
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 
-// AppCompatActivity es un FragmentActivity: necesario para que el
-// diálogo de selección de dispositivos Cast funcione sin cerrarse.
+// AppCompatActivity es un FragmentActivity: necesario para el diálogo Cast.
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -90,6 +91,7 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
     val tabs = listOf("home", "explore", "library")
     val context = LocalContext.current
 
+    // Permiso de notificaciones (Android 13+)
     val notifLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { }
@@ -102,9 +104,30 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
         }
     }
 
+    // ============================================================
+    // BUCLE AUTOMÁTICO PERMANENTE:
+    // - Si hay canciones sin procesar → las analiza (carátula/género)
+    // - Si hay géneros por buscar online → los busca
+    // - Si todo está al día → espera 1 minuto y revisa el canal
+    //   por si subiste canciones nuevas a Telegram
+    // ============================================================
     LaunchedEffect(Unit) {
         if (TelegramConfig.token(context).isNotBlank() && MusicRepository.songs.value.isEmpty()) {
             try { MusicRepository.sync() } catch (_: Exception) {}
+        }
+        while (isActive) {
+            val meta = MusicRepository.pendingCount()
+            val online = MusicRepository.pendingOnlineCount()
+            if (meta > 0) {
+                try { MusicRepository.scanPending() } catch (_: Exception) {}
+                delay(400)
+            } else if (online > 0) {
+                try { MusicRepository.enrichOnline() } catch (_: Exception) {}
+                delay(1500)
+            } else {
+                delay(60_000)
+                try { MusicRepository.sync() } catch (_: Exception) {}
+            }
         }
     }
 
