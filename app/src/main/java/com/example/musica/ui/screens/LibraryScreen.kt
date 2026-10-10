@@ -53,6 +53,7 @@ import com.example.musica.ui.components.SongRow
 import com.example.musica.ui.components.SectionHeader
 import com.example.musica.ui.theme.CardDark
 import com.example.musica.ui.theme.CardLighter
+import com.example.musica.ui.theme.Cyan
 import com.example.musica.ui.theme.NavyBg
 import com.example.musica.ui.theme.Pink
 import com.example.musica.ui.theme.Purple
@@ -91,10 +92,19 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
         }
     }
 
+    // Trabajo en segundo plano: primero metadatos locales, luego búsqueda online
     LaunchedEffect(Unit) {
-        while (isActive && MusicRepository.pendingCount() > 0) {
-            try { MusicRepository.scanPending() } catch (_: Exception) {}
-            delay(600)
+        while (isActive) {
+            val meta = MusicRepository.pendingCount()
+            val online = MusicRepository.pendingOnlineCount()
+            if (meta == 0 && online == 0) break
+            if (meta > 0) {
+                try { MusicRepository.scanPending() } catch (_: Exception) {}
+                delay(600)
+            } else if (online > 0) {
+                try { MusicRepository.enrichOnline(limit = 3) } catch (_: Exception) {}
+                delay(2000)
+            }
         }
     }
 
@@ -133,6 +143,12 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
         if (pending > 0) {
             Text("🔎 Procesando carátulas y géneros… faltan $pending canciones",
                 color = Purple, fontSize = 12.sp)
+            Spacer(Modifier.height(8.dp))
+        }
+        val onlinePending = MusicRepository.pendingOnlineCount()
+        if (pending == 0 && onlinePending > 0) {
+            Text("🌐 Buscando géneros en internet… faltan $onlinePending canciones",
+                color = Cyan, fontSize = 12.sp)
             Spacer(Modifier.height(8.dp))
         }
 
