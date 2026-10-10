@@ -91,7 +91,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             castContext = null
             castAvailable = false
         }
-        castContext?.sessionManager?.addSessionManagerListener(sessionListener, CastSession::class.java)
+        castContext?.sessionManager?.addSessionManagerListener(
+            sessionListener, CastSession::class.java
+        )
 
         viewModelScope.launch {
             while (isActive) {
@@ -332,7 +334,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                 null
             )
         } else {
-            controller?.repeatMode = if (repeatOne) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
+            controller?.repeatMode =
+                if (repeatOne) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
         }
     }
 
