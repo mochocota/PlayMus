@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Cloud
@@ -41,10 +42,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import com.example.musica.data.MusicRepository
+import com.example.musica.data.PlaylistRepository
+import com.example.musica.data.Song
 import com.example.musica.data.playlists
 import com.example.musica.data.recents
 import com.example.musica.player.PlayerViewModel
 import com.example.musica.telegram.TelegramConfig
+import com.example.musica.ui.components.AddToPlaylistDialog
 import com.example.musica.ui.components.AlbumArt
 import com.example.musica.ui.components.CoverImage
 import com.example.musica.ui.components.SectionHeader
@@ -63,9 +67,11 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
     val scope = rememberCoroutineScope()
     val ctx = LocalContext.current
     val songs by MusicRepository.songs.collectAsState()
+    val userLists by PlaylistRepository.playlists.collectAsState()
     var syncing by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
     var autoTried by rememberSaveable { mutableStateOf(false) }
+    var songToAdd by remember { mutableStateOf<Song?>(null) }
 
     fun doSync() {
         if (syncing) return
@@ -86,7 +92,6 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
         }
     }
 
-    // Auto-escaneo: mientras haya canciones sin procesar (carátula/género), procesa tandas
     LaunchedEffect(Unit) {
         while (isActive && MusicRepository.pendingCount() > 0) {
             try { MusicRepository.scanPending() } catch (_: Exception) {}
@@ -104,8 +109,10 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
                 if (syncing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Purple)
                 else Icon(Icons.Filled.Refresh, null, tint = Color.White)
             }
-            Icon(Icons.Filled.Search, null, tint = Color.White)
-            Spacer(Modifier.width(14.dp))
+            IconButton(onClick = { nav.navigate("search") }) {
+                Icon(Icons.Filled.Search, null, tint = Color.White)
+            }
+            Spacer(Modifier.width(2.dp))
             Icon(Icons.Filled.Settings, null, tint = Color.White,
                 modifier = Modifier.clickable { nav.navigate("settings") })
         }
@@ -135,7 +142,8 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
             Triple(Icons.Filled.Album, "Álbumes", "${MusicRepository.albumCount()}") to "albums",
             Triple(Icons.Filled.Person, "Artistas", "${MusicRepository.artistCount()}") to "artists",
             Triple(Icons.Filled.Category, "Géneros", "${MusicRepository.genresWithCount().size}") to "genres",
-            Triple(Icons.AutoMirrored.Filled.QueueMusic, "Listas de reproducción", "${playlists.size}") to "playlists",
+            Triple(Icons.AutoMirrored.Filled.QueueMusic, "Listas de reproducción",
+                "${userLists.size + playlists.size}") to "playlists",
             Triple(Icons.Filled.Cloud, "Canal de Telegram",
                 if (TelegramConfig.token(ctx).isBlank()) "Configurar" else "Conectado") to "telegram"
         )
@@ -169,7 +177,9 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
                         Text(s.title, color = Color.White, fontSize = 14.sp, maxLines = 1)
                         Text(s.artist, color = TextSecondary, fontSize = 12.sp, maxLines = 1)
                     }
-                    Icon(Icons.Filled.MoreVert, null, tint = TextSecondary)
+                    IconButton(onClick = { songToAdd = s }) {
+                        Icon(Icons.Filled.Add, "Añadir a lista", tint = Purple)
+                    }
                 }
             }
         } else {
@@ -187,4 +197,6 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
             }
         }
     }
+
+    AddToPlaylistDialog(songToAdd) { songToAdd = null }
 }
