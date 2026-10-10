@@ -5,10 +5,14 @@ import android.media.MediaMetadataRetriever
 import com.example.musica.telegram.TelegramClient
 import com.example.musica.telegram.TelegramConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -17,6 +21,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.text.Normalizer
+import java.util.concurrent.ConcurrentHashMap
 
 object MusicRepository {
 
@@ -25,6 +30,16 @@ object MusicRepository {
 
     private val mutex = Mutex()
     private lateinit var context: Context
+
+    // ============================================================
+    // PARÁMETROS DE VELOCIDAD DEL ESCANEO
+    // SCAN_PARALLEL = cuántas canciones se analizan A LA VEZ
+    // SCAN_BATCH = cuántas se procesan por tanda
+    // ============================================================
+    private const val SCAN_PARALLEL = 6
+    private const val SCAN_BATCH = 24
+    private const val ONLINE_PARALLEL = 4
+    private const val ONLINE_BATCH = 8
 
     fun init(ctx: Context) {
         context = ctx.applicationContext
@@ -40,7 +55,6 @@ object MusicRepository {
 
     fun pendingCount(): Int = _songs.value.count { it.fromTelegram && !it.metaDone }
 
-    // Canciones pendientes de buscar su género en internet
     fun pendingOnlineCount(): Int = _songs.value.count {
         it.fromTelegram && it.genre == "Otros" && !it.scanned &&
                 it.artist.isNotBlank() && it.artist != "Desconocido" &&
@@ -61,7 +75,6 @@ object MusicRepository {
     fun artistCount(): Int = _songs.value.map { it.artist }.distinct().size
     fun albumCount(): Int = albums().size
 
-    // Cambiar el género de una canción manualmente (desde la app)
     fun updateGenre(songId: Int, genre: String) {
         _songs.value = _songs.value.map {
             if (it.id == songId) it.copy(genre = genre) else it
@@ -92,7 +105,6 @@ object MusicRepository {
             for (u in updates) {
                 val a = TelegramClient.extractAudio(u) ?: continue
 
-                // ¿Ya teníamos esta canción? (reenvío al canal con hashtag nuevo)
                 val existingIdx = result.indexOfFirst { it.fileId == a.fileId }
                 if (existingIdx >= 0) {
                     val old = result[existingIdx]
@@ -135,12 +147,12 @@ object MusicRepository {
                 try { client.getUpdates(maxId + 1, timeoutSec = 0) } catch (_: Exception) {}
             }
 
-            // 1) Metadatos locales del MP3 (carátula, álbum, género ID3)
-            val covers = scanLocked(limit = 8)
+            // 1) Metadatos locales (carátula, álbum, género ID3) — en paralelo
+            val covers = scanLocked(limit = SCAN_BATCH)
             // 2) Re-clasificar lo que quedó como "Otros"
             fixed += reclassifyLite()
-            // 3) Buscar géneros en internet (iTunes / Deezer)
-            val online = enrichLocked(limit = 4)
+            // 3) Buscar géneros online (iTunes / Deezer) — en paralelo
+            val online = enrichLocked(limit = ONLINE_BATCH)
 
             val sb = StringBuilder("Sincronizado: $added canciones nuevas")
             if (skipped > 0) sb.append(" · $skipped omitidas (>20MB)")
@@ -153,12 +165,15 @@ object MusicRepository {
         }
     }
 
-    suspend fun scanPending(limit: Int = 8): Int = mutex.withLock { scanLocked(limit) }
+    suspend fun scanPending(limit: Int = SCAN_BATCH): Int = mutex.withLock { scanLocked(limit) }
 
-    // Busca géneros online para canciones que quedaron como "Otros"
-    suspend fun enrichOnline(limit: Int = 3): Int = mutex.withLock { enrichLocked(limit) }
+    suspend fun enrichOnline(limit: Int = ONLINE_BATCH): Int = mutex.withLock { enrichLocked(limit) }
 
-    // Extrae metadatos ID3: título, artista, álbum, género y carátula incrustada
+    // ============================================================
+    // ESCANEO EN PARALELO: analiza hasta SCAN_PARALLEL canciones
+    // a la vez (antes era de una en una). Extrae carátula, título,
+    // artista, álbum y género de los metadatos ID3.
+    // ============================================================
     private suspend fun scanLocked(limit: Int): Int = withContext(Dispatchers.IO) {
         val token = TelegramConfig.token(context)
         if (token.isBlank()) return@withContext 0
@@ -167,53 +182,65 @@ object MusicRepository {
         if (pending.isEmpty()) return@withContext 0
 
         val client = TelegramClient(token)
-        val updated = _songs.value.toMutableList()
-        var covers = 0
+        val sem = Semaphore(SCAN_PARALLEL)
+        val results = ConcurrentHashMap<Int, Song>()
 
-        for (song in pending) {
-            val idx = updated.indexOfFirst { it.id == song.id }
-            if (idx < 0) continue
-            var newSong = updated[idx].copy(metaDone = true)
-            try {
-                val url = client.fileUrl(client.getFilePath(song.fileId))
-                val r = MediaMetadataRetriever()
-                try {
-                    r.setDataSource(url)
-                    val t = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
-                    val a = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
-                    val al = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
-                    val g = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_GENRE)
-                    val art = r.embeddedPicture
-
-                    if (art != null && art.isNotEmpty()) {
-                        try {
-                            val f = coverFile(song.id)
-                            f.parentFile?.mkdirs()
-                            f.writeBytes(art)
-                            newSong = newSong.copy(coverPath = f.absolutePath)
-                            covers++
-                        } catch (_: Exception) {}
-                    }
-                    newSong = newSong.copy(
-                        title = t?.takeIf { it.isNotBlank() } ?: newSong.title,
-                        artist = a?.takeIf { it.isNotBlank() } ?: newSong.artist,
-                        album = al?.takeIf { it.isNotBlank() } ?: newSong.album,
-                        genre = if (newSong.genre == "Otros")
-                            (detectGenre(newSong.caption, newSong.fileName, g) ?: "Otros")
-                        else newSong.genre
-                    )
-                } finally {
-                    r.release()
+        val jobs = pending.map { song ->
+            launch {
+                sem.withPermit {
+                    results[song.id] = scanOne(client, song)
                 }
-            } catch (_: Exception) {}
-            updated[idx] = newSong
+            }
         }
-        _songs.value = updated
+        jobs.joinAll()
+
+        if (results.isEmpty()) return@withContext 0
+        val covers = results.values.count { it.coverPath.isNotBlank() }
+        _songs.value = _songs.value.map { s -> results[s.id] ?: s }
         save()
         covers
     }
 
-    // Intenta asignar género consultando iTunes y Deezer (gratis, sin API key)
+    // Analiza UNA canción (se ejecuta en paralelo con otras)
+    private fun scanOne(client: TelegramClient, song: Song): Song {
+        var newSong = song.copy(metaDone = true)
+        try {
+            val url = client.fileUrl(client.getFilePath(song.fileId))
+            val r = MediaMetadataRetriever()
+            try {
+                r.setDataSource(url)
+                val t = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
+                val a = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                val al = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
+                val g = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_GENRE)
+                val art = r.embeddedPicture
+
+                if (art != null && art.isNotEmpty()) {
+                    try {
+                        val f = coverFile(song.id)
+                        f.parentFile?.mkdirs()
+                        f.writeBytes(art)
+                        newSong = newSong.copy(coverPath = f.absolutePath)
+                    } catch (_: Exception) {}
+                }
+                newSong = newSong.copy(
+                    title = t?.takeIf { it.isNotBlank() } ?: newSong.title,
+                    artist = a?.takeIf { it.isNotBlank() } ?: newSong.artist,
+                    album = al?.takeIf { it.isNotBlank() } ?: newSong.album,
+                    genre = if (newSong.genre == "Otros")
+                        (detectGenre(newSong.caption, newSong.fileName, g) ?: "Otros")
+                    else newSong.genre
+                )
+            } finally {
+                r.release()
+            }
+        } catch (_: Exception) {}
+        return newSong
+    }
+
+    // ============================================================
+    // BÚSQUEDA ONLINE EN PARALELO (iTunes primero, Deezer respaldo)
+    // ============================================================
     private suspend fun enrichLocked(limit: Int): Int = withContext(Dispatchers.IO) {
         val candidates = _songs.value.filter {
             it.fromTelegram && it.genre == "Otros" && !it.scanned &&
@@ -222,93 +249,99 @@ object MusicRepository {
         }.take(limit)
         if (candidates.isEmpty()) return@withContext 0
 
-        val updated = _songs.value.toMutableList()
-        var got = 0
-        for (song in candidates) {
-            val idx = updated.indexOfFirst { it.id == song.id }
-            if (idx < 0) continue
-            // "scanned" se usa aquí como marca de "ya intentamos buscar online"
-            val g = lookupGenreOnline(song.title, song.artist)
-            updated[idx] = updated[idx].copy(scanned = true, genre = g ?: updated[idx].genre)
-            if (g != null) got++
+        val sem = Semaphore(ONLINE_PARALLEL)
+        val results = ConcurrentHashMap<Int, String?>()
+
+        val jobs = candidates.map { song ->
+            launch {
+                sem.withPermit {
+                    results[song.id] = lookupGenreOnline(song.title, song.artist)
+                }
+            }
         }
-        _songs.value = updated
+        jobs.joinAll()
+
+        if (results.isEmpty()) return@withContext 0
+        val got = results.values.count { it != null }
+        _songs.value = _songs.value.map { s ->
+            if (results.containsKey(s.id)) s.copy(scanned = true, genre = results[s.id] ?: s.genre)
+            else s
+        }
         save()
         got
     }
 
     // Consulta iTunes primero; si no hay suerte, Deezer
-    private suspend fun lookupGenreOnline(title: String, artist: String): String? =
-        withContext(Dispatchers.IO) {
-            // ---------- 1) iTunes Search API ----------
+    private fun lookupGenreOnline(title: String, artist: String): String? {
+        // ---------- 1) iTunes Search API ----------
+        try {
+            val q = URLEncoder.encode("$artist $title", "UTF-8")
+            val conn = URL("https://itunes.apple.com/search?term=$q&entity=song&limit=1")
+                .openConnection() as HttpURLConnection
             try {
-                val q = URLEncoder.encode("$artist $title", "UTF-8")
-                val conn = URL("https://itunes.apple.com/search?term=$q&entity=song&limit=1")
-                    .openConnection() as HttpURLConnection
-                try {
-                    conn.connectTimeout = 8000
-                    conn.readTimeout = 8000
-                    conn.setRequestProperty("User-Agent", "MusicaApp/1.0")
-                    val body = conn.inputStream.bufferedReader().readText()
-                    val arr = JSONObject(body).optJSONArray("results")
-                    if (arr != null && arr.length() > 0) {
-                        val hit = arr.getJSONObject(0)
-                        val t = hit.optString("trackName", "")
-                        val g = hit.optString("primaryGenreName", "")
-                        if (g.isNotBlank() && titleMatches(t, title)) {
-                            mappedGenre(g)?.let { return@withContext it }
-                        }
+                conn.connectTimeout = 8000
+                conn.readTimeout = 8000
+                conn.setRequestProperty("User-Agent", "MusicaApp/1.0")
+                val body = conn.inputStream.bufferedReader().readText()
+                val arr = JSONObject(body).optJSONArray("results")
+                if (arr != null && arr.length() > 0) {
+                    val hit = arr.getJSONObject(0)
+                    val t = hit.optString("trackName", "")
+                    val g = hit.optString("primaryGenreName", "")
+                    if (g.isNotBlank() && titleMatches(t, title)) {
+                        mappedGenre(g)?.let { return it }
                     }
-                } finally {
-                    conn.disconnect()
                 }
-            } catch (_: Exception) {}
+            } finally {
+                conn.disconnect()
+            }
+        } catch (_: Exception) {}
 
-            // ---------- 2) Deezer (respaldo) ----------
+        // ---------- 2) Deezer (respaldo) ----------
+        try {
+            val q = URLEncoder.encode("artist:\"$artist\" track:\"$title\"", "UTF-8")
+            val conn = URL("https://api.deezer.com/search?q=$q&limit=1")
+                .openConnection() as HttpURLConnection
             try {
-                val q = URLEncoder.encode("artist:\"$artist\" track:\"$title\"", "UTF-8")
-                val conn = URL("https://api.deezer.com/search?q=$q&limit=1")
-                    .openConnection() as HttpURLConnection
-                try {
-                    conn.connectTimeout = 8000
-                    conn.readTimeout = 8000
-                    conn.setRequestProperty("User-Agent", "MusicaApp/1.0")
-                    val body = conn.inputStream.bufferedReader().readText()
-                    val data = JSONObject(body).optJSONArray("data")
-                    if (data != null && data.length() > 0) {
-                        val track = data.getJSONObject(0)
-                        val t = track.optString("title_short", track.optString("title", ""))
-                        if (titleMatches(t, title)) {
-                            val albumId = track.optJSONObject("album")?.optLong("id") ?: 0L
-                            if (albumId > 0) {
+                conn.connectTimeout = 8000
+                conn.readTimeout = 8000
+                conn.setRequestProperty("User-Agent", "MusicaApp/1.0")
+                val body = conn.inputStream.bufferedReader().readText()
+                val data = JSONObject(body).optJSONArray("data")
+                if (data != null && data.length() > 0) {
+                    val track = data.getJSONObject(0)
+                    val t = track.optString("title_short", track.optString("title", ""))
+                    if (titleMatches(t, title)) {
+                        val albumId = track.optJSONObject("album")?.optLong("id") ?: 0L
+                        if (albumId > 0) {
+                            try {
+                                val c2 = URL("https://api.deezer.com/album/$albumId")
+                                    .openConnection() as HttpURLConnection
                                 try {
-                                    val c2 = URL("https://api.deezer.com/album/$albumId")
-                                        .openConnection() as HttpURLConnection
-                                    try {
-                                        c2.connectTimeout = 8000
-                                        c2.readTimeout = 8000
-                                        c2.setRequestProperty("User-Agent", "MusicaApp/1.0")
-                                        val album = JSONObject(c2.inputStream.bufferedReader().readText())
-                                        val genres = album.optJSONObject("genres")?.optJSONArray("data")
-                                        if (genres != null && genres.length() > 0) {
-                                            val gname = genres.getJSONObject(0).optString("name", "")
-                                            if (gname.isNotBlank()) {
-                                                mappedGenre(gname)?.let { return@withContext it }
-                                            }
+                                    c2.connectTimeout = 8000
+                                    c2.readTimeout = 8000
+                                    c2.setRequestProperty("User-Agent", "MusicaApp/1.0")
+                                    val album = JSONObject(c2.inputStream.bufferedReader().readText())
+                                    val genres = album.optJSONObject("genres")?.optJSONArray("data")
+                                    if (genres != null && genres.length() > 0) {
+                                        val gname = genres.getJSONObject(0).optString("name", "")
+                                        if (gname.isNotBlank()) {
+                                            mappedGenre(gname)?.let { return it }
                                         }
-                                    } finally {
-                                        c2.disconnect()
                                     }
-                                } catch (_: Exception) {}
-                            }
+                                } finally {
+                                    c2.disconnect()
+                                }
+                            } catch (_: Exception) {}
                         }
                     }
-                } finally {
-                    conn.disconnect()
                 }
-            } catch (_: Exception) {}
-            null
-        }
+            } finally {
+                conn.disconnect()
+            }
+        } catch (_: Exception) {}
+        return null
+    }
 
     // Comprueba que el título devuelto por internet se parece al buscado
     private fun titleMatches(onlineTitle: String, localTitle: String): Boolean {
@@ -404,7 +437,7 @@ object MusicRepository {
         "alternative" to "Alternativo", "alternativo" to "Alternativo",
         "world" to "Música del Mundo", "k-pop" to "K-Pop", "j-pop" to "J-Pop",
         "new age" to "New Age", "easy listening" to "Instrumental",
-        "children" to "Infantil", "j-pop" to "J-Pop"
+        "children" to "Infantil"
     )
 
     private fun mappedGenre(raw: String?): String? {
