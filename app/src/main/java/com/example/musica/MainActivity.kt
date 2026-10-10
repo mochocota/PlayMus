@@ -6,8 +6,8 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -97,7 +97,7 @@ fun BottomNavBar(nav: NavHostController) {
         listOf(
             Triple("home", "Inicio", Icons.Filled.Home),
             Triple("explore", "Explorar", Icons.Filled.Search),
-            Triple("library", "Biblioteca", Icons.AutoMirrored.Filled.LibraryMusic)
+            Triple("library", "Biblioteca", Icons.Filled.LibraryMusic)
         ).forEach { (r, label, icon) ->
             NavigationBarItem(
                 selected = route == r,
