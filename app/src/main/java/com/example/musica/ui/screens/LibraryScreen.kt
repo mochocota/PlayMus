@@ -43,8 +43,10 @@ import androidx.navigation.NavHostController
 import com.example.musica.data.MusicRepository
 import com.example.musica.data.playlists
 import com.example.musica.data.recents
+import com.example.musica.player.PlayerViewModel
 import com.example.musica.telegram.TelegramConfig
 import com.example.musica.ui.components.AlbumArt
+import com.example.musica.ui.components.CoverImage
 import com.example.musica.ui.components.SectionHeader
 import com.example.musica.ui.theme.CardDark
 import com.example.musica.ui.theme.CardLighter
@@ -52,10 +54,12 @@ import com.example.musica.ui.theme.NavyBg
 import com.example.musica.ui.theme.Pink
 import com.example.musica.ui.theme.Purple
 import com.example.musica.ui.theme.TextSecondary
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 @Composable
-fun LibraryScreen(nav: NavHostController) {
+fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
     val scope = rememberCoroutineScope()
     val ctx = LocalContext.current
     val songs by MusicRepository.songs.collectAsState()
@@ -79,6 +83,14 @@ fun LibraryScreen(nav: NavHostController) {
             if (TelegramConfig.token(ctx).isNotBlank() && MusicRepository.songs.value.isEmpty()) {
                 doSync()
             }
+        }
+    }
+
+    // Auto-escaneo: mientras haya canciones sin procesar (carátula/género), procesa tandas
+    LaunchedEffect(Unit) {
+        while (isActive && MusicRepository.pendingCount() > 0) {
+            try { MusicRepository.scanPending() } catch (_: Exception) {}
+            delay(600)
         }
     }
 
@@ -111,10 +123,16 @@ fun LibraryScreen(nav: NavHostController) {
             Text(status, color = TextSecondary, fontSize = 12.sp)
             Spacer(Modifier.height(8.dp))
         }
+        val pending = MusicRepository.pendingCount()
+        if (pending > 0) {
+            Text("🔎 Procesando carátulas y géneros… faltan $pending canciones",
+                color = Purple, fontSize = 12.sp)
+            Spacer(Modifier.height(8.dp))
+        }
 
         val rows: List<Pair<Triple<ImageVector, String, String>, String?>> = listOf(
             Triple(Icons.Filled.MusicNote, "Canciones", "${songs.size}") to "genre/Todas",
-            Triple(Icons.Filled.Album, "Álbumes", "${MusicRepository.albumCount()}") to null,
+            Triple(Icons.Filled.Album, "Álbumes", "${MusicRepository.albumCount()}") to "albums",
             Triple(Icons.Filled.Person, "Artistas", "${MusicRepository.artistCount()}") to "artists",
             Triple(Icons.Filled.Category, "Géneros", "${MusicRepository.genresWithCount().size}") to "genres",
             Triple(Icons.AutoMirrored.Filled.QueueMusic, "Listas de reproducción", "${playlists.size}") to "playlists",
@@ -140,17 +158,32 @@ fun LibraryScreen(nav: NavHostController) {
         }
 
         Spacer(Modifier.height(16.dp))
-        SectionHeader("Recientes", "Ver todo")
-        recents.forEach { r ->
-            Row(Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically) {
-                AlbumArt(Modifier.size(46.dp), corner = 10.dp)
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(r.title, color = Color.White, fontSize = 14.sp)
-                    Text(r.subtitle, color = TextSecondary, fontSize = 12.sp)
+        SectionHeader("Tus canciones", "Ver todo")
+        if (songs.isNotEmpty()) {
+            songs.take(4).forEach { s ->
+                Row(Modifier.fillMaxWidth().clickable { vm.play(s, songs) }.padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    CoverImage(s, Modifier.size(46.dp), corner = 10.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(s.title, color = Color.White, fontSize = 14.sp, maxLines = 1)
+                        Text(s.artist, color = TextSecondary, fontSize = 12.sp, maxLines = 1)
+                    }
+                    Icon(Icons.Filled.MoreVert, null, tint = TextSecondary)
                 }
-                Icon(Icons.Filled.MoreVert, null, tint = TextSecondary)
+            }
+        } else {
+            recents.forEach { r ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    AlbumArt(Modifier.size(46.dp), corner = 10.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(r.title, color = Color.White, fontSize = 14.sp)
+                        Text(r.subtitle, color = TextSecondary, fontSize = 12.sp)
+                    }
+                    Icon(Icons.Filled.MoreVert, null, tint = TextSecondary)
+                }
             }
         }
     }
