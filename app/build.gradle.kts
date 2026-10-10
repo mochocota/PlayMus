@@ -12,8 +12,8 @@ android {
         applicationId = "com.example.musica"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = "1.2"
     }
 
     buildTypes {
@@ -49,4 +49,5 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.8.0")
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     implementation("androidx.media3:media3-session:1.4.1")
+    implementation("com.google.android.gms:play-services-cast-framework:21.4.0")
 }
