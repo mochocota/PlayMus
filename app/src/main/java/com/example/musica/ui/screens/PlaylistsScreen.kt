@@ -30,7 +30,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -55,6 +54,7 @@ fun PlaylistsScreen(nav: NavHostController) {
     val favIds by FavoritesRepository.ids.collectAsState()
     var showCreate by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
+    var listToDelete by remember { mutableStateOf<UserPlaylist?>(null) }
 
     val favSongs = favIds.mapNotNull { id -> songs.firstOrNull { it.id == id } }
 
@@ -72,14 +72,13 @@ fun PlaylistsScreen(nav: NavHostController) {
         Text("Favoritos y tus listas", color = TextSecondary, fontSize = 13.sp)
         Spacer(Modifier.height(14.dp))
 
-        // Tarjeta de Favoritos + tarjetas de tus listas (2 columnas)
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
             modifier = Modifier.weight(1f),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
-            // ---------- Favoritos (siempre primero) ----------
+            // ---------- Favoritos (siempre primero, sin borrar) ----------
             item {
                 PlaylistCard(
                     name = "Favoritos",
@@ -92,7 +91,7 @@ fun PlaylistsScreen(nav: NavHostController) {
                     }
                 )
             }
-            // ---------- Tus listas ----------
+            // ---------- Tus listas (con confirmación al borrar) ----------
             items(userLists.size) { i ->
                 val p = userLists[i]
                 val covers = PlaylistRepository.songsIn(p.id, songs).take(4)
@@ -101,7 +100,7 @@ fun PlaylistsScreen(nav: NavHostController) {
                     count = p.songIds.size,
                     covers = covers,
                     onClick = { nav.navigate("userplaylist/${p.id}") },
-                    onDelete = { PlaylistRepository.delete(p.id) }
+                    onDelete = { listToDelete = p }
                 )
             }
         }
@@ -141,6 +140,32 @@ fun PlaylistsScreen(nav: NavHostController) {
             }
         )
     }
+
+    // ---------- Diálogo: confirmar eliminación de una lista ----------
+    listToDelete?.let { p ->
+        AlertDialog(
+            onDismissRequest = { listToDelete = null },
+            containerColor = CardDark,
+            title = { Text("Eliminar lista", color = Color.White, fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "¿Eliminar la lista «${p.name}»?\n\nLa música NO se borra de tu biblioteca, solo la lista.",
+                    color = TextSecondary, fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    PlaylistRepository.delete(p.id)
+                    listToDelete = null
+                }) { Text("Eliminar", color = Pink) }
+            },
+            dismissButton = {
+                TextButton(onClick = { listToDelete = null }) {
+                    Text("Cancelar", color = Purple)
+                }
+            }
+        )
+    }
 }
 
 // ---------- Tarjeta cuadrada con collage de 4 portadas ----------
@@ -155,7 +180,6 @@ private fun PlaylistCard(
 ) {
     Column(Modifier.clickable(onClick = onClick)) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
-            // Collage 2x2 (rellena con degradado si faltan portadas)
             Column(Modifier.fillMaxSize().clip(RoundedCornerShape(14.dp))) {
                 Row(Modifier.weight(1f)) {
                     Cell(covers.getOrNull(0), Modifier.weight(1f).fillMaxHeight())
@@ -166,24 +190,21 @@ private fun PlaylistCard(
                     Cell(covers.getOrNull(3), Modifier.weight(1f).fillMaxHeight())
                 }
             }
-            // Insignia (corazón en Favoritos)
             if (badge != null) {
                 Box(Modifier.align(Alignment.TopStart).padding(8.dp)
                     .size(26.dp).clip(CircleShape).background(Pink.copy(alpha = 0.9f)),
                     contentAlignment = Alignment.Center) { badge() }
             }
-            // Botón borrar (solo listas propias)
             if (onDelete != null) {
                 Box(Modifier.align(Alignment.TopEnd).padding(6.dp)
                     .size(28.dp).clip(CircleShape)
                     .background(Color.Black.copy(alpha = 0.55f))
                     .clickable(onClick = onDelete),
                     contentAlignment = Alignment.Center) {
-                    Icon(Icons.Filled.Delete, "Borrar lista",
+                    Icon(Icons.Filled.Delete, "Eliminar lista",
                         tint = Color.White, modifier = Modifier.size(15.dp))
                 }
             }
-            // Si no hay canciones aún: icono centrado tenue
             if (covers.isEmpty()) {
                 Icon(Icons.AutoMirrored.Filled.QueueMusic, null,
                     tint = Color.White.copy(alpha = 0.6f),
