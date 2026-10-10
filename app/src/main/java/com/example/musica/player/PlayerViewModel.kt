@@ -2,6 +2,7 @@ package com.example.musica.player
 
 import android.app.Application
 import android.content.ComponentName
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -24,12 +25,12 @@ import com.google.android.gms.cast.CastContext
 import com.google.android.gms.cast.CastSession
 import com.google.android.gms.cast.MediaInfo
 import com.google.android.gms.cast.MediaLoadRequestData
-import com.google.android.gms.cast.MediaMetadata
 import com.google.android.gms.cast.MediaQueueItem
 import com.google.android.gms.cast.MediaStatus
 import com.google.android.gms.cast.QueueData
 import com.google.android.gms.cast.RemoteMediaClient
 import com.google.android.gms.cast.framework.SessionManagerListener
+import com.google.android.gms.cast.MediaMetadata as CastMediaMetadata
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -117,6 +118,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         override fun onStatusUpdated() { refreshProgress() }
         override fun onMetadataUpdated() { refreshProgress() }
         override fun onQueueStatusUpdated() { refreshProgress() }
+        override fun onPreloadStatusUpdated() {}
+        override fun onSendingRemoteMediaRequest() {}
+        override fun onAdBreakStatusUpdated() {}
     }
 
     private fun onCastChanged(active: Boolean) {
@@ -142,10 +146,13 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val start = list.indexOfFirst { it.id == song.id }.coerceAtLeast(0)
                 val limited = list.take(30)
-                val items = limited.map { MediaQueueItem.Builder(buildCastMediaInfo(it)).build() }
+                val items = mutableListOf<MediaQueueItem>()
+                for (s in limited) {
+                    items.add(MediaQueueItem.Builder(buildCastMediaInfo(s)).build())
+                }
                 val startIdx = start.coerceAtMost(items.size - 1)
                 val queueData = QueueData.Builder()
-                    .setItems(items)
+                    .setItems(items.toTypedArray())
                     .setStartIndex(startIdx)
                     .setRepeatMode(MediaStatus.REPEAT_MODE_REPEAT_OFF)
                     .build()
@@ -162,7 +169,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // Construye el MediaInfo con la URL pública real (para que la bocina la descargue)
-    private suspend fun buildCastMediaInfo(s: Song): MediaInfo = withContext(Dispatchers.IO) {
+    private fun buildCastMediaInfo(s: Song): MediaInfo {
         val url = if (s.fromTelegram && s.fileId.isNotEmpty()) {
             try {
                 val client = TelegramClient(TelegramConfig.token(getApplication()))
@@ -171,12 +178,12 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         } else {
             s.url.ifBlank { DEMO_URL }
         }
-        val md = MediaMetadata(MediaMetadata.MEDIA_TYPE_MUSIC_TRACK)
-        md.putString(MediaMetadata.KEY_TITLE, s.title)
-        md.putString(MediaMetadata.KEY_ARTIST, s.artist)
-        if (s.album.isNotBlank()) md.putString(MediaMetadata.KEY_ALBUM_TITLE, s.album)
+        val md = CastMediaMetadata(CastMediaMetadata.MEDIA_TYPE_MUSIC_TRACK)
+        md.putString(CastMediaMetadata.KEY_TITLE, s.title)
+        md.putString(CastMediaMetadata.KEY_ARTIST, s.artist)
+        if (s.album.isNotBlank()) md.putString(CastMediaMetadata.KEY_ALBUM_TITLE, s.album)
         val custom = JSONObject().put("songId", s.id)
-        MediaInfo.Builder(url)
+        return MediaInfo.Builder(url)
             .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
             .setContentType("audio/mpeg")
             .setMetadata(md)
