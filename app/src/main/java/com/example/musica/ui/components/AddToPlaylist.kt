@@ -43,7 +43,7 @@ import com.example.musica.ui.theme.Pink
 import com.example.musica.ui.theme.Purple
 import com.example.musica.ui.theme.TextSecondary
 
-// Fila de canción reutilizable: tocar reproduce, 🏷️ cambia género, + añade a lista
+// Fila de canción: tocar reproduce, 🏷️ cambia género, + añade a lista
 @Composable
 fun SongRow(song: Song, list: List<Song>, vm: PlayerViewModel, onAdd: () -> Unit) {
     var showGenre by remember { mutableStateOf(false) }
@@ -69,7 +69,7 @@ fun SongRow(song: Song, list: List<Song>, vm: PlayerViewModel, onAdd: () -> Unit
     }
 }
 
-// Diálogo para cambiar el género de una canción (manual, siempre funciona)
+// Diálogo para cambiar el género de una canción manualmente
 @Composable
 fun EditGenreDialog(song: Song, onDismiss: () -> Unit) {
     val existing = MusicRepository.genresWithCount().map { it.first }
@@ -93,17 +93,17 @@ fun EditGenreDialog(song: Song, onDismiss: () -> Unit) {
                 Column(
                     Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState())
                 ) {
-                    options.chunked(3).forEach { rowOptions ->
+                    options.chunked(3).forEach { fila ->
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             modifier = Modifier.padding(bottom = 6.dp)
                         ) {
-                            rowOptions.forEach { g ->
-                                val isCurrent = g.equals(song.genre, ignoreCase = true)
+                            fila.forEach { g ->
+                                val actual = g.equals(song.genre, ignoreCase = true)
                                 Box(
                                     Modifier
                                         .clip(RoundedCornerShape(14.dp))
-                                        .background(if (isCurrent) Purple.copy(alpha = 0.35f) else CardLighter)
+                                        .background(if (actual) Purple.copy(alpha = 0.35f) else CardLighter)
                                         .clickable {
                                             MusicRepository.updateGenre(song.id, g)
                                             onDismiss()
@@ -200,3 +200,29 @@ fun AddToPlaylistDialog(song: Song?, onDismiss: () -> Unit) {
                     singleLine = true,
                     placeholder = { Text("Crear lista nueva…", color = TextSecondary, fontSize = 13.sp) },
                     colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White, unfocusedTextColor = Color.White,
+                        cursorColor = Color.White, focusedBorderColor = Purple,
+                        unfocusedBorderColor = TextSecondary
+                    ),
+                    trailingIcon = {
+                        IconButton(onClick = {
+                            val id = PlaylistRepository.create(newName)
+                            if (id.isNotEmpty()) {
+                                PlaylistRepository.addSong(id, song.id)
+                                msg = "Lista creada y canción añadida ✓"
+                                newName = ""
+                            }
+                        }) { Icon(Icons.Filled.Add, null, tint = Pink) }
+                    }
+                )
+                if (msg.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(msg, color = if (msg.startsWith("Ya estaba")) Pink else Cyan, fontSize = 12.sp)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Cerrar", color = Purple) }
+        }
+    )
+}
