@@ -8,6 +8,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Equalizer
@@ -20,23 +21,32 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
+import com.example.musica.telegram.TelegramConfig
 import com.example.musica.ui.theme.NavyBg
 import com.example.musica.ui.theme.Purple
 import com.example.musica.ui.theme.TextSecondary
 
 @Composable
 fun SettingRow(icon: ImageVector, label: String, value: String? = null,
+               onClick: (() -> Unit)? = null,
                trailing: @Composable () -> Unit = {}) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp),
+    Row(Modifier.fillMaxWidth()
+        .clickable(enabled = onClick != null) { onClick?.invoke() }
+        .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Icon(icon, null, tint = TextSecondary, modifier = Modifier.size(22.dp))
         Spacer(Modifier.width(14.dp))
@@ -48,8 +58,11 @@ fun SettingRow(icon: ImageVector, label: String, value: String? = null,
 
 @Composable
 fun SettingsScreen(nav: NavHostController) {
+    val ctx = LocalContext.current
+    val tgConnected = TelegramConfig.token(ctx).isNotBlank()
     var sync by remember { mutableStateOf(true) }
     var offline by remember { mutableStateOf(false) }
+
     Column(Modifier.fillMaxSize().background(NavyBg)
         .verticalScroll(rememberScrollState()).padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -58,6 +71,19 @@ fun SettingsScreen(nav: NavHostController) {
             Text("  Configuración", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.height(18.dp))
+
+        // ---------- Biblioteca ----------
+        Text("Biblioteca", color = TextSecondary, fontSize = 13.sp)
+        Spacer(Modifier.height(6.dp))
+        SettingRow(
+            Icons.Filled.Cloud, "Canal de Telegram",
+            if (tgConnected) "Conectado" else "Configurar",
+            onClick = { nav.navigate("telegram") }
+        ) {
+            Icon(Icons.Filled.ChevronRight, null, tint = TextSecondary)
+        }
+        Spacer(Modifier.height(14.dp))
+
         Text("Cuenta", color = TextSecondary, fontSize = 13.sp)
         Spacer(Modifier.height(6.dp))
         SettingRow(Icons.Filled.Person, "Tu perfil") {
@@ -68,6 +94,7 @@ fun SettingsScreen(nav: NavHostController) {
                 colors = SwitchDefaults.colors(checkedTrackColor = Purple))
         }
         Spacer(Modifier.height(14.dp))
+
         Text("Reproducción", color = TextSecondary, fontSize = 13.sp)
         Spacer(Modifier.height(6.dp))
         SettingRow(Icons.Filled.Tune, "Calidad de audio", "Alta") {
@@ -81,6 +108,7 @@ fun SettingsScreen(nav: NavHostController) {
                 colors = SwitchDefaults.colors(checkedTrackColor = Purple))
         }
         Spacer(Modifier.height(14.dp))
+
         Text("Notificaciones", color = TextSecondary, fontSize = 13.sp)
         Spacer(Modifier.height(6.dp))
         SettingRow(Icons.Filled.Notifications, "Nuevos lanzamientos") {
@@ -88,6 +116,7 @@ fun SettingsScreen(nav: NavHostController) {
                 colors = SwitchDefaults.colors(checkedTrackColor = Purple))
         }
         Spacer(Modifier.height(14.dp))
+
         Text("Otros", color = TextSecondary, fontSize = 13.sp)
         Spacer(Modifier.height(6.dp))
         SettingRow(Icons.AutoMirrored.Filled.HelpOutline, "Ayuda") {
