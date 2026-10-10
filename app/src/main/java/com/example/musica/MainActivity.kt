@@ -5,10 +5,10 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -66,7 +66,9 @@ import com.example.musica.ui.theme.NavyBg
 import com.example.musica.ui.theme.Purple
 import com.example.musica.ui.theme.TextSecondary
 
-class MainActivity : ComponentActivity() {
+// AppCompatActivity es un FragmentActivity: necesario para que el
+// diálogo de selección de dispositivos Cast funcione sin cerrarse.
+class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         MusicRepository.init(applicationContext)
@@ -88,7 +90,6 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
     val tabs = listOf("home", "explore", "library")
     val context = LocalContext.current
 
-    // Pide permiso de notificaciones (Android 13+) para mostrar la de reproducción
     val notifLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { }
