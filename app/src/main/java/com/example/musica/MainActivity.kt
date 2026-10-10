@@ -31,6 +31,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.musica.data.MusicRepository
+import com.example.musica.data.PlayStatsRepository
 import com.example.musica.data.PlaylistRepository
 import com.example.musica.player.PlayerViewModel
 import com.example.musica.telegram.TelegramConfig
@@ -63,6 +64,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         MusicRepository.init(applicationContext)
         PlaylistRepository.init(applicationContext)
+        PlayStatsRepository.init(applicationContext)
         setContent {
             MusicaTheme {
                 AppRoot()
