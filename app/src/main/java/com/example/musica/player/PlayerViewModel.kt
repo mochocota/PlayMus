@@ -21,15 +21,15 @@ import com.example.musica.data.PlayStatsRepository
 import com.example.musica.data.Song
 import com.example.musica.telegram.TelegramClient
 import com.example.musica.telegram.TelegramConfig
-import com.google.android.gms.cast.CastContext
-import com.google.android.gms.cast.CastSession
 import com.google.android.gms.cast.MediaInfo
 import com.google.android.gms.cast.MediaLoadRequestData
 import com.google.android.gms.cast.MediaQueueItem
 import com.google.android.gms.cast.MediaStatus
-import com.google.android.gms.cast.QueueData
-import com.google.android.gms.cast.RemoteMediaClient
+import com.google.android.gms.cast.framework.CastContext
+import com.google.android.gms.cast.framework.CastSession
 import com.google.android.gms.cast.framework.SessionManagerListener
+import com.google.android.gms.cast.framework.media.QueueData
+import com.google.android.gms.cast.framework.media.RemoteMediaClient
 import com.google.android.gms.cast.MediaMetadata as CastMediaMetadata
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.Dispatchers
@@ -109,6 +109,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         override fun onSessionResumed(session: CastSession, wasSuspended: Boolean) { onCastChanged(true) }
         override fun onSessionEnded(session: CastSession, error: Int) { onCastChanged(false) }
         override fun onSessionSuspended(session: CastSession, reason: Int) {}
+        override fun onSessionSuspending(session: CastSession) {}
         override fun onSessionStarting(session: CastSession) {}
         override fun onSessionStartFailed(session: CastSession, error: Int) {}
         override fun onSessionEnding(session: CastSession) {}
