@@ -100,7 +100,7 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
         NavHost(nav, startDestination = "splash", modifier = Modifier.padding(pad)) {
             composable("splash") { SplashScreen(nav) }
             composable("home") { HomeScreen(nav, vm) }
-            composable("explore") { ExploreScreen(nav) }
+            composable("explore") { ExploreScreen(nav, vm) }
             composable("library") { LibraryScreen(nav, vm) }
             composable("player") { NowPlayingScreen(nav, vm) }
             composable("queue") { QueueScreen(nav, vm) }
