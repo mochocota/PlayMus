@@ -136,7 +136,7 @@ object MusicRepository {
                     val g = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_GENRE)
                     val art = r.embeddedPicture
 
-                    if (!art.isNullOrEmpty()) {
+                    if (art != null && art.isNotEmpty()) {
                         try {
                             val f = coverFile(song.id)
                             f.parentFile?.mkdirs()
