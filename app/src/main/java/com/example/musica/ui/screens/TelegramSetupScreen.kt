@@ -8,6 +8,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -39,15 +40,19 @@ import com.example.musica.ui.theme.Purple
 import com.example.musica.ui.theme.TextSecondary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun TelegramSetupScreen(nav: NavHostController) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
+    // Si el token ya viene del código o del teléfono, se muestra como referencia
     var token by remember { mutableStateOf(TelegramConfig.token(ctx)) }
     var canal by remember { mutableStateOf(TelegramConfig.channel(ctx)) }
     var busy by remember { mutableStateOf(false) }
+    var testingOnly by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf("") }
+    var resultOk by remember { mutableStateOf<Boolean?>(null) }
 
     Column(Modifier.fillMaxSize().background(NavyBg)
         .verticalScroll(rememberScrollState()).padding(16.dp)) {
@@ -55,7 +60,7 @@ fun TelegramSetupScreen(nav: NavHostController) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Color.White,
                 modifier = Modifier.clickable { nav.popBackStack() })
-            Text("  Canal de Telegram", color = Color.White, fontSize = 20.sp,
+            Text("  Nuevo token", color = Color.White, fontSize = 20.sp,
                 fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.height(16.dp))
@@ -63,11 +68,7 @@ fun TelegramSetupScreen(nav: NavHostController) {
         Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
             .background(CardDark).padding(14.dp)) {
             Text(
-                "Cómo conectar tu canal 📻\n\n" +
-                "1. Habla con @BotFather en Telegram → envía /newbot → dale un nombre → copia el TOKEN que te entrega.\n\n" +
-                "2. Crea un canal de música y añade a tu bot como Administrador.\n\n" +
-                "3. Sube canciones como archivo de audio al canal. En el texto del mensaje escribe el género con # :  #rock #pop #salsa #balada #grupera…\n\n" +
-                "4. Guarda el token aquí y pulsa «Sincronizar» en Biblioteca.",
+                "Pega el token de un bot nuevo y pulsa «Guardar»: la app probará su conexión primero. Solo se guardará si el token es válido.\n\nRecuerda añadir al bot como Administrador de tu canal de música.",
                 color = TextSecondary, fontSize = 13.sp, lineHeight = 18.sp
             )
         }
@@ -103,30 +104,66 @@ fun TelegramSetupScreen(nav: NavHostController) {
         Spacer(Modifier.height(18.dp))
 
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            // ---------- Probar conexión (sin guardar) ----------
             Box(Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(12.dp))
-                .background(CardLighter).clickable(enabled = !busy) {
-                    busy = true; result = "Probando…"
+                .background(CardLighter).clickable(enabled = !busy && token.isNotBlank()) {
+                    busy = true; testingOnly = true; result = "Probando…"; resultOk = null
                     scope.launch(Dispatchers.IO) {
-                        result = try {
-                            "@${TelegramClient(token.trim()).getMe()} conectado ✓"
-                        } catch (e: Exception) { "Error: ${e.message}" }
-                        busy = false
+                        val (ok, msg) = try {
+                            val u = TelegramClient(token.trim()).getMe()
+                            true to "@$u conectado ✓"
+                        } catch (e: Exception) {
+                            false to "Error: ${e.message}"
+                        }
+                        withContext(Dispatchers.Main) {
+                            result = msg; resultOk = ok; busy = false
+                        }
                     }
                 }, contentAlignment = Alignment.Center) {
-                Text(if (busy) "Probando…" else "Probar conexión",
-                    color = Color.White, fontSize = 14.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (busy && testingOnly) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Cyan)
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Text("Probar conexión", color = Color.White, fontSize = 14.sp)
+                }
             }
+            // ---------- Guardar (prueba + guarda si es válido) ----------
             Box(Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(12.dp))
-                .background(GradientBrush).clickable {
-                    TelegramConfig.save(ctx, token, canal)
-                    result = "Guardado ✓"
+                .background(GradientBrush).clickable(enabled = !busy && token.isNotBlank()) {
+                    busy = true; testingOnly = false; result = "Probando y guardando…"; resultOk = null
+                    scope.launch(Dispatchers.IO) {
+                        val (ok, msg) = try {
+                            val u = TelegramClient(token.trim()).getMe()
+                            TelegramConfig.save(ctx, token, canal)
+                            true to "Guardado ✓ Bot @$u conectado"
+                        } catch (e: Exception) {
+                            false to "No se guardó — token inválido: ${e.message}"
+                        }
+                        withContext(Dispatchers.Main) {
+                            result = msg; resultOk = ok; busy = false
+                        }
+                    }
                 }, contentAlignment = Alignment.Center) {
-                Text("Guardar", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (busy && !testingOnly) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Text("Guardar", color = Color.White, fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold)
+                }
             }
         }
         Spacer(Modifier.height(12.dp))
         if (result.isNotBlank()) {
-            Text(result, color = if (result.startsWith("Error")) Pink else Cyan, fontSize = 13.sp)
+            Text(result,
+                color = when {
+                    resultOk == true -> Cyan
+                    resultOk == false -> Pink
+                    else -> TextSecondary
+                },
+                fontSize = 13.sp)
         }
         Spacer(Modifier.height(10.dp))
         Text("Nota: los bots de Telegram solo descargan archivos de hasta 20 MB.",
