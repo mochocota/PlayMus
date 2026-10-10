@@ -10,7 +10,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
-import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -20,19 +19,16 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -48,11 +44,8 @@ import com.example.musica.ui.theme.CardDark
 import com.example.musica.ui.theme.CardLighter
 import com.example.musica.ui.theme.Cyan
 import com.example.musica.ui.theme.NavyBg
-import com.example.musica.ui.theme.Pink
 import com.example.musica.ui.theme.Purple
 import com.example.musica.ui.theme.TextSecondary
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 @Composable
@@ -63,7 +56,6 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
     val userLists by PlaylistRepository.playlists.collectAsState()
     var syncing by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
-    var autoTried by rememberSaveable { mutableStateOf(false) }
 
     fun doSync() {
         if (syncing) return
@@ -72,30 +64,6 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
         scope.launch {
             status = try { MusicRepository.sync() } catch (e: Exception) { "Error: ${e.message}" }
             syncing = false
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        if (!autoTried) {
-            autoTried = true
-            if (TelegramConfig.token(ctx).isNotBlank() && MusicRepository.songs.value.isEmpty()) {
-                doSync()
-            }
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        while (isActive) {
-            val meta = MusicRepository.pendingCount()
-            val online = MusicRepository.pendingOnlineCount()
-            if (meta == 0 && online == 0) break
-            if (meta > 0) {
-                try { MusicRepository.scanPending() } catch (_: Exception) {}
-                delay(600)
-            } else if (online > 0) {
-                try { MusicRepository.enrichOnline(limit = 3) } catch (_: Exception) {}
-                delay(2000)
-            }
         }
     }
 
@@ -141,12 +109,11 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
             }
             Spacer(Modifier.height(4.dp))
 
-            // ---------- Accesos (Canciones, Géneros, Listas) ----------
-            val rows: List<Pair<Triple<ImageVector, String, String>, String?>> = listOf(
+            // ---------- Accesos (Canciones, Listas) ----------
+            val rows: List<Pair<Triple<androidx.compose.ui.graphics.vector.ImageVector, String, String>, String?>> = listOf(
                 Triple(Icons.Filled.MusicNote, "Canciones", "${songs.size}") to "genre/Todas",
-                
-                            Triple(Icons.AutoMirrored.Filled.QueueMusic, "Listas de reproducción",
-                "${userLists.size + 1}") to "playlists"
+                Triple(Icons.AutoMirrored.Filled.QueueMusic, "Listas de reproducción",
+                    "${userLists.size + 1}") to "playlists"
             )
             rows.forEach { (t, route) ->
                 val (icon, label, count) = t
@@ -176,7 +143,7 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
             Box(Modifier.weight(1f).fillMaxWidth().padding(16.dp),
                 contentAlignment = Alignment.Center) {
                 Text(
-                    "Tu biblioteca está vacía.\n\nConfigura tu canal de Telegram en ⚙️ Configuración y pulsa 🔄 para sincronizar.",
+                    "Tu biblioteca está vacía.\n\nSi el token está integrado en la app, la sincronización empieza sola; también puedes pulsar 🔄.",
                     color = TextSecondary, fontSize = 14.sp
                 )
             }
