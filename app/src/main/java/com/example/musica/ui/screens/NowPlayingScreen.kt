@@ -32,9 +32,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
+import com.example.musica.data.MusicRepository
 import com.example.musica.data.fmtMillis
 import com.example.musica.player.PlayerViewModel
-import com.example.musica.ui.components.AlbumArt
+import com.example.musica.ui.components.CoverImage
 import com.example.musica.ui.theme.CardLighter
 import com.example.musica.ui.theme.Cyan
 import com.example.musica.ui.theme.GradientBrush
@@ -72,14 +73,17 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
             return
         }
 
-        AlbumArt(Modifier.fillMaxWidth().aspectRatio(1f), corner = 20.dp)
+        // Versión fresca del repositorio (para ver la carátula en cuanto se procese)
+        val fresh = MusicRepository.songs.value.firstOrNull { it.id == song.id } ?: song
+
+        CoverImage(fresh, Modifier.fillMaxWidth().aspectRatio(1f), corner = 20.dp, sample = 1)
         Spacer(Modifier.height(20.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(song.title, color = Color.White, fontSize = 20.sp,
                     fontWeight = FontWeight.Bold, maxLines = 1)
-                Text("${song.album} · ${song.artist}", color = TextSecondary,
-                    fontSize = 13.sp, maxLines = 1)
+                Text("${song.album.ifBlank { song.genre }} · ${song.artist}",
+                    color = TextSecondary, fontSize = 13.sp, maxLines = 1)
             }
             IconButton(onClick = { liked = !liked }) {
                 Icon(if (liked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, null,
