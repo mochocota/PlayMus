@@ -52,10 +52,10 @@ fun UserPlaylistScreen(nav: NavHostController, vm: PlayerViewModel, playlistId: 
     val lists by PlaylistRepository.playlists.collectAsState()
 
     var songToRemove by remember { mutableStateOf<Song?>(null) }
+    var showDeleteList by remember { mutableStateOf(false) }
 
     val pl = lists.firstOrNull { it.id == playlistId }
 
-    // Si es una lista del usuario y fue borrada: volver atrás
     LaunchedEffect(pl?.id) {
         if (!isFavorites && lists.isNotEmpty() && pl == null) nav.popBackStack()
     }
@@ -78,11 +78,8 @@ fun UserPlaylistScreen(nav: NavHostController, vm: PlayerViewModel, playlistId: 
                 if (isFavorites) {
                     Icon(Icons.Filled.Favorite, null, tint = Pink)
                 } else {
-                    IconButton(onClick = {
-                        PlaylistRepository.delete(playlistId)
-                        nav.popBackStack()
-                    }) {
-                        Icon(Icons.Filled.Delete, "Borrar lista", tint = Pink)
+                    IconButton(onClick = { showDeleteList = true }) {
+                        Icon(Icons.Filled.Delete, "Eliminar lista", tint = Pink)
                     }
                 }
             }
@@ -148,6 +145,33 @@ fun UserPlaylistScreen(nav: NavHostController, vm: PlayerViewModel, playlistId: 
             },
             dismissButton = {
                 TextButton(onClick = { songToRemove = null }) { Text("Cancelar", color = Purple) }
+            }
+        )
+    }
+
+    // Confirmación para eliminar la lista completa
+    if (showDeleteList && pl != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteList = false },
+            containerColor = CardDark,
+            title = { Text("Eliminar lista", color = Color.White, fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "¿Eliminar la lista «${pl.name}»?\n\nLa música NO se borra de tu biblioteca, solo la lista.",
+                    color = TextSecondary, fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    PlaylistRepository.delete(playlistId)
+                    showDeleteList = false
+                    nav.popBackStack()
+                }) { Text("Eliminar", color = Pink) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteList = false }) {
+                    Text("Cancelar", color = Purple)
+                }
             }
         )
     }
