@@ -386,6 +386,7 @@ private fun LyricsView(
     }
 }
 
+// Letra sincronizada: resalta la línea que suena y se desplaza sola
 @Composable
 private fun SyncedLyrics(lines: List<LyricLine>, vm: PlayerViewModel) {
     val listState = rememberLazyListState()
