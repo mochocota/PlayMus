@@ -144,8 +144,7 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
             // ---------- Accesos (Canciones, Géneros, Listas) ----------
             val rows: List<Pair<Triple<ImageVector, String, String>, String?>> = listOf(
                 Triple(Icons.Filled.MusicNote, "Canciones", "${songs.size}") to "genre/Todas",
-                Triple(Icons.Filled.Category, "Géneros",
-                    "${MusicRepository.genresWithCount().size}") to "genres",
+                
                             Triple(Icons.AutoMirrored.Filled.QueueMusic, "Listas de reproducción",
                 "${userLists.size + 1}") to "playlists"
             )
