@@ -30,6 +30,7 @@ import com.example.musica.data.fmtSeconds
 import com.example.musica.data.genreColor
 import com.example.musica.data.genreIcon
 import com.example.musica.player.PlayerViewModel
+import com.example.musica.ui.components.CoverImage
 import com.example.musica.ui.components.MiniPlayer
 import com.example.musica.ui.theme.NavyBg
 import com.example.musica.ui.theme.Purple
@@ -108,11 +109,10 @@ fun SongListScreen(nav: NavHostController, vm: PlayerViewModel, genre: String) {
                     items(list.size) { i ->
                         val s = list[i]
                         Row(Modifier.fillMaxWidth().clickable { vm.play(s, list) }
-                            .padding(vertical = 10.dp),
+                            .padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically) {
-                            Text("${i + 1}",
-                                color = if (vm.current?.id == s.id) Purple else TextSecondary,
-                                fontSize = 14.sp, modifier = Modifier.width(28.dp))
+                            CoverImage(s, Modifier.size(46.dp), corner = 10.dp)
+                            Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(s.title, color = Color.White, fontSize = 14.sp, maxLines = 1)
                                 Text(s.artist, color = TextSecondary, fontSize = 12.sp, maxLines = 1)
