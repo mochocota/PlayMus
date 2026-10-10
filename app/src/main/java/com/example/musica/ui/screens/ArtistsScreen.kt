@@ -13,6 +13,8 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -21,6 +23,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
+import com.example.musica.data.ArtistItem
+import com.example.musica.data.MusicRepository
 import com.example.musica.data.artists
 import com.example.musica.ui.theme.CardLighter
 import com.example.musica.ui.theme.NavyBg
@@ -28,6 +32,11 @@ import com.example.musica.ui.theme.TextSecondary
 
 @Composable
 fun ArtistsScreen(nav: NavHostController) {
+    val songs by MusicRepository.songs.collectAsState()
+    val repoArtists = songs.groupBy { it.artist }
+        .map { (name, list) -> ArtistItem(name, list.size, name.take(1).uppercase()) }
+    val list = if (repoArtists.isNotEmpty()) repoArtists else artists
+
     Column(Modifier.fillMaxSize().background(NavyBg).padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Color.White,
@@ -43,12 +52,12 @@ fun ArtistsScreen(nav: NavHostController) {
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            items(artists.size) { i ->
-                val a = artists[i]
+            items(list.size) { i ->
+                val a = list[i]
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(Modifier.size(84.dp).clip(CircleShape).background(CardLighter),
                         contentAlignment = Alignment.Center) {
-                        Text(a.emoji, fontSize = 34.sp)
+                        Text(a.emoji, fontSize = 34.sp, color = Color.White)
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(a.name, color = Color.White, fontSize = 13.sp, maxLines = 1)
