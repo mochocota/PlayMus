@@ -10,6 +10,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -22,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.musica.data.MusicRepository
 import com.example.musica.player.PlayerViewModel
 import com.example.musica.ui.theme.CardLighter
 import com.example.musica.ui.theme.GradientBrush
@@ -58,22 +60,24 @@ fun Waveform(color: Color = Purple) {
 @Composable
 fun MiniPlayer(vm: PlayerViewModel, onOpen: () -> Unit) {
     val song = vm.current ?: return
+    // Busca la versión fresca (con carátula) en el repositorio
+    val fresh = MusicRepository.songs.value.firstOrNull { it.id == song.id } ?: song
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
             .clip(RoundedCornerShape(14.dp)).background(CardLighter)
             .clickable(onClick = onOpen).padding(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        AlbumArt(Modifier.size(40.dp), corner = 10.dp)
+        CoverImage(fresh, Modifier.size(40.dp), corner = 10.dp)
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Text(song.title, color = Color.White, fontSize = 13.sp, maxLines = 1)
             Text(song.artist, color = TextSecondary, fontSize = 11.sp, maxLines = 1)
         }
-        androidx.compose.material3.IconButton(onClick = { vm.toggle() }) {
+        IconButton(onClick = { vm.toggle() }) {
             Icon(if (vm.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, null, tint = Color.White)
         }
-        androidx.compose.material3.IconButton(onClick = { vm.next() }) {
+        IconButton(onClick = { vm.next() }) {
             Icon(Icons.Filled.SkipNext, null, tint = Color.White)
         }
     }
