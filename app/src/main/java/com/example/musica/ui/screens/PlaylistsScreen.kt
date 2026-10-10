@@ -3,13 +3,16 @@ package com.example.musica.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -22,18 +25,23 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
+import com.example.musica.data.FavoritesRepository
+import com.example.musica.data.MusicRepository
 import com.example.musica.data.PlaylistRepository
-import com.example.musica.data.playlists
+import com.example.musica.data.Song
+import com.example.musica.data.UserPlaylist
+import com.example.musica.ui.components.AlbumArt
+import com.example.musica.ui.components.CoverImage
 import com.example.musica.ui.theme.CardDark
 import com.example.musica.ui.theme.NavyBg
 import com.example.musica.ui.theme.Pink
@@ -43,9 +51,12 @@ import com.example.musica.ui.theme.TextSecondary
 @Composable
 fun PlaylistsScreen(nav: NavHostController) {
     val userLists by PlaylistRepository.playlists.collectAsState()
-    var tab by rememberSaveable { mutableStateOf(0) }
+    val songs by MusicRepository.songs.collectAsState()
+    val favIds by FavoritesRepository.ids.collectAsState()
     var showCreate by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
+
+    val favSongs = favIds.mapNotNull { id -> songs.firstOrNull { it.id == id } }
 
     Column(Modifier.fillMaxSize().background(NavyBg).padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -57,78 +68,41 @@ fun PlaylistsScreen(nav: NavHostController) {
                 Icon(Icons.Filled.Add, "Crear lista", tint = Color.White)
             }
         }
+        Spacer(Modifier.height(6.dp))
+        Text("Favoritos y tus listas", color = TextSecondary, fontSize = 13.sp)
         Spacer(Modifier.height(14.dp))
 
-        Row {
-            listOf("Tus listas", "Recomendadas").forEachIndexed { i, t ->
-                Column(Modifier.clickable { tab = i }.padding(end = 22.dp)) {
-                    Text(t, color = if (tab == i) Color.White else TextSecondary,
-                        fontWeight = if (tab == i) FontWeight.Bold else FontWeight.Normal)
-                    Spacer(Modifier.height(6.dp))
-                    Box(Modifier.width(90.dp).height(3.dp).clip(RoundedCornerShape(2.dp))
-                        .background(if (tab == i) Pink else Color.Transparent))
-                }
-            }
-        }
-        Spacer(Modifier.height(10.dp))
-
-        if (tab == 0) {
-            // ---------- TUS LISTAS (personalizadas) ----------
-            if (userLists.isEmpty()) {
-                Text(
-                    "Aún no tienes listas.\n\nPulsa el botón + para crear tu primera lista, y luego añade canciones con el botón + de cada canción.",
-                    color = TextSecondary, fontSize = 14.sp
+        // Tarjeta de Favoritos + tarjetas de tus listas (2 columnas)
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp)
+        ) {
+            // ---------- Favoritos (siempre primero) ----------
+            item {
+                PlaylistCard(
+                    name = "Favoritos",
+                    count = favSongs.size,
+                    covers = favSongs.take(4),
+                    onClick = { nav.navigate("userplaylist/favoritos") },
+                    badge = {
+                        Icon(Icons.Filled.Favorite, "Favoritos",
+                            tint = Pink, modifier = Modifier.size(14.dp))
+                    }
                 )
-            } else {
-                LazyColumn(Modifier.weight(1f)) {
-                    items(userLists.size) { i ->
-                        val p = userLists[i]
-                        Row(
-                            Modifier.fillMaxWidth()
-                                .clickable { nav.navigate("userplaylist/${p.id}") }
-                                .padding(vertical = 9.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(Modifier.size(48.dp).clip(RoundedCornerShape(12.dp))
-                                .background(Purple.copy(alpha = 0.18f)),
-                                contentAlignment = Alignment.Center) {
-                                Icon(Icons.AutoMirrored.Filled.QueueMusic, null, tint = Purple)
-                            }
-                            Spacer(Modifier.width(14.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(p.name, color = Color.White, fontSize = 15.sp, maxLines = 1)
-                                Text("${p.songIds.size} canciones",
-                                    color = TextSecondary, fontSize = 12.sp)
-                            }
-                            IconButton(onClick = { PlaylistRepository.delete(p.id) }) {
-                                Icon(Icons.Filled.Delete, "Borrar lista", tint = Pink)
-                            }
-                        }
-                    }
-                }
             }
-        } else {
-            // ---------- RECOMENDADAS (de demostración) ----------
-            LazyColumn(Modifier.weight(1f)) {
-                items(playlists.size) { i ->
-                    val p = playlists[i]
-                    Row(
-                        Modifier.fillMaxWidth().clickable { nav.navigate("playlist/${p.id}") }
-                            .padding(vertical = 9.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(Modifier.size(48.dp).clip(RoundedCornerShape(12.dp))
-                            .background(p.color.copy(alpha = 0.18f)),
-                            contentAlignment = Alignment.Center) {
-                            Icon(p.icon, null, tint = p.color)
-                        }
-                        Spacer(Modifier.width(14.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(p.name, color = Color.White, fontSize = 15.sp)
-                            Text("${p.count} canciones", color = TextSecondary, fontSize = 12.sp)
-                        }
-                    }
-                }
+            // ---------- Tus listas ----------
+            items(userLists.size) { i ->
+                val p = userLists[i]
+                val covers = PlaylistRepository.songsIn(p.id, songs).take(4)
+                PlaylistCard(
+                    name = p.name,
+                    count = p.songIds.size,
+                    covers = covers,
+                    onClick = { nav.navigate("userplaylist/${p.id}") },
+                    onDelete = { PlaylistRepository.delete(p.id) }
+                )
             }
         }
     }
@@ -166,5 +140,68 @@ fun PlaylistsScreen(nav: NavHostController) {
                 }
             }
         )
+    }
+}
+
+// ---------- Tarjeta cuadrada con collage de 4 portadas ----------
+@Composable
+private fun PlaylistCard(
+    name: String,
+    count: Int,
+    covers: List<Song>,
+    onClick: () -> Unit,
+    badge: (@Composable () -> Unit)? = null,
+    onDelete: (() -> Unit)? = null
+) {
+    Column(Modifier.clickable(onClick = onClick)) {
+        Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
+            // Collage 2x2 (rellena con degradado si faltan portadas)
+            Column(Modifier.fillMaxSize().clip(RoundedCornerShape(14.dp))) {
+                Row(Modifier.weight(1f)) {
+                    Cell(covers.getOrNull(0), Modifier.weight(1f).fillMaxHeight())
+                    Cell(covers.getOrNull(1), Modifier.weight(1f).fillMaxHeight())
+                }
+                Row(Modifier.weight(1f)) {
+                    Cell(covers.getOrNull(2), Modifier.weight(1f).fillMaxHeight())
+                    Cell(covers.getOrNull(3), Modifier.weight(1f).fillMaxHeight())
+                }
+            }
+            // Insignia (corazón en Favoritos)
+            if (badge != null) {
+                Box(Modifier.align(Alignment.TopStart).padding(8.dp)
+                    .size(26.dp).clip(CircleShape).background(Pink.copy(alpha = 0.9f)),
+                    contentAlignment = Alignment.Center) { badge() }
+            }
+            // Botón borrar (solo listas propias)
+            if (onDelete != null) {
+                Box(Modifier.align(Alignment.TopEnd).padding(6.dp)
+                    .size(28.dp).clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.55f))
+                    .clickable(onClick = onDelete),
+                    contentAlignment = Alignment.Center) {
+                    Icon(Icons.Filled.Delete, "Borrar lista",
+                        tint = Color.White, modifier = Modifier.size(15.dp))
+                }
+            }
+            // Si no hay canciones aún: icono centrado tenue
+            if (covers.isEmpty()) {
+                Icon(Icons.AutoMirrored.Filled.QueueMusic, null,
+                    tint = Color.White.copy(alpha = 0.6f),
+                    modifier = Modifier.align(Alignment.Center).size(34.dp))
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(name, color = Color.White, fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold, maxLines = 1)
+        Text("$count canciones", color = TextSecondary, fontSize = 12.sp)
+    }
+}
+
+@Composable
+private fun Cell(song: Song?, modifier: Modifier) {
+    if (song != null) {
+        CoverImage(song, modifier, corner = 0.dp, sample = 4)
+    } else {
+        AlbumArt(modifier, corner = 0.dp)
     }
 }
