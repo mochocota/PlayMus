@@ -30,6 +30,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.example.musica.data.FavoritesRepository
 import com.example.musica.data.MusicRepository
 import com.example.musica.data.PlayStatsRepository
 import com.example.musica.data.PlaylistRepository
@@ -65,6 +66,7 @@ class MainActivity : ComponentActivity() {
         MusicRepository.init(applicationContext)
         PlaylistRepository.init(applicationContext)
         PlayStatsRepository.init(applicationContext)
+        FavoritesRepository.init(applicationContext)
         setContent {
             MusicaTheme {
                 AppRoot()
