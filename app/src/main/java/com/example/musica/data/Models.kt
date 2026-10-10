@@ -4,20 +4,28 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.BeachAccess
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Celebration
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.Lyrics
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MilitaryTech
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Nightlife
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Piano
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.SportsEsports
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Whatshot
+import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 
-// =====================================================================
-// DATOS DE EJEMPLO — cambia DEMO_URL por tus propias canciones (MP3)
-// =====================================================================
+// Canciones de demostración (se usan si aún no sincronizas tu canal)
 const val DEMO_URL = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
 
 data class Song(
@@ -26,7 +34,11 @@ data class Song(
     val artist: String,
     val album: String = "",
     val durationSec: Int,
-    val url: String = DEMO_URL
+    val url: String = DEMO_URL,
+    val fileId: String = "",
+    val genre: String = "Otros",
+    val fromTelegram: Boolean = false,
+    val scanned: Boolean = false
 )
 
 data class PlaylistItem(val id: String, val name: String, val count: Int,
@@ -120,6 +132,39 @@ val artists = listOf(
 fun songsFor(playlistId: String): List<Song> = when (playlistId) {
     "chill" -> chillSongs
     else -> ff6Songs + extraSongs
+}
+
+// ---------- Colores e íconos por género ----------
+fun genreColor(genre: String): Color = when (genre.lowercase()) {
+    "pop" -> Color(0xFFEC4899)
+    "rock" -> Color(0xFFEF4444)
+    "balada" -> Color(0xFF8B5CF6)
+    "salsa" -> Color(0xFFF97316)
+    "grupera", "ranchera", "norteño", "norteno" -> Color(0xFF22C55E)
+    "cumbia" -> Color(0xFF14B8A6)
+    "banda", "vallenato" -> Color(0xFFEAB308)
+    "reggaetón", "reggaeton" -> Color(0xFFA855F7)
+    "electrónica", "electronica" -> Color(0xFF22D3EE)
+    "hip hop" -> Color(0xFFF43F5E)
+    "jazz" -> Color(0xFF6366F1)
+    "clásica", "clasica" -> Color(0xFF93C5FD)
+    else -> Color(0xFF64748B)
+}
+
+fun genreIcon(genre: String): ImageVector = when (genre.lowercase()) {
+    "pop" -> Icons.Filled.Star
+    "rock" -> Icons.Filled.Whatshot
+    "balada" -> Icons.Filled.Favorite
+    "salsa" -> Icons.Filled.LocalFireDepartment
+    "grupera", "ranchera", "norteño", "norteno" -> Icons.Filled.Piano
+    "cumbia" -> Icons.Filled.Celebration
+    "banda", "vallenato" -> Icons.Filled.MilitaryTech
+    "reggaetón", "reggaeton" -> Icons.Filled.Nightlife
+    "electrónica", "electronica" -> Icons.Filled.Bolt
+    "hip hop" -> Icons.Filled.Mic
+    "jazz" -> Icons.Filled.Lyrics
+    "clásica", "clasica" -> Icons.Filled.Piano
+    else -> Icons.Filled.MusicNote
 }
 
 fun fmtSeconds(s: Int) = "%d:%02d".format(s / 60, s % 60)
