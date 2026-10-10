@@ -3,10 +3,14 @@ package com.example.musica.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -27,19 +31,22 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.musica.data.MusicRepository
 import com.example.musica.data.PlaylistRepository
 import com.example.musica.data.Song
 import com.example.musica.data.fmtSeconds
 import com.example.musica.player.PlayerViewModel
 import com.example.musica.ui.theme.CardDark
+import com.example.musica.ui.theme.CardLighter
 import com.example.musica.ui.theme.Cyan
 import com.example.musica.ui.theme.Pink
 import com.example.musica.ui.theme.Purple
 import com.example.musica.ui.theme.TextSecondary
 
-// Fila de canción reutilizable: tocar reproduce, botón + añade a una lista
+// Fila de canción reutilizable: tocar reproduce, 🏷️ cambia género, + añade a lista
 @Composable
 fun SongRow(song: Song, list: List<Song>, vm: PlayerViewModel, onAdd: () -> Unit) {
+    var showGenre by remember { mutableStateOf(false) }
     Row(
         Modifier.fillMaxWidth().clickable { vm.play(song, list) }.padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -50,11 +57,92 @@ fun SongRow(song: Song, list: List<Song>, vm: PlayerViewModel, onAdd: () -> Unit
             Text(song.title, color = Color.White, fontSize = 14.sp, maxLines = 1)
             Text(song.artist, color = TextSecondary, fontSize = 12.sp, maxLines = 1)
         }
+        IconButton(onClick = { showGenre = true }) {
+            Icon(Icons.Filled.Category, "Cambiar género", tint = Cyan)
+        }
         IconButton(onClick = onAdd) {
             Icon(Icons.Filled.Add, "Añadir a lista", tint = Purple)
         }
-        Text(fmtSeconds(song.durationSec), color = TextSecondary, fontSize = 12.sp)
     }
+    if (showGenre) {
+        EditGenreDialog(song) { showGenre = false }
+    }
+}
+
+// Diálogo para cambiar el género de una canción (manual, siempre funciona)
+@Composable
+fun EditGenreDialog(song: Song, onDismiss: () -> Unit) {
+    val existing = MusicRepository.genresWithCount().map { it.first }
+    val suggestions = listOf(
+        "Pop", "Rock", "Balada", "Salsa", "Cumbia", "Banda", "Grupera",
+        "Norteño", "Corridos", "Ranchera", "Vallenato", "Reggaetón",
+        "Bachata", "Merengue", "Electrónica", "Bandas Sonoras"
+    )
+    val options = (existing + suggestions).distinct().filter { it != "Otros" }
+    var custom by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = CardDark,
+        title = { Text("Cambiar género", color = Color.White, fontWeight = FontWeight.Bold) },
+        text = {
+            Column {
+                Text(song.title, color = Cyan, fontSize = 13.sp, maxLines = 1)
+                Text("Género actual: ${song.genre}", color = TextSecondary, fontSize = 12.sp)
+                Spacer(Modifier.height(10.dp))
+                Column(
+                    Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState())
+                ) {
+                    options.chunked(3).forEach { rowOptions ->
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        ) {
+                            rowOptions.forEach { g ->
+                                val isCurrent = g.equals(song.genre, ignoreCase = true)
+                                Box(
+                                    Modifier
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(if (isCurrent) Purple.copy(alpha = 0.35f) else CardLighter)
+                                        .clickable {
+                                            MusicRepository.updateGenre(song.id, g)
+                                            onDismiss()
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                ) {
+                                    Text(g, color = Color.White, fontSize = 11.sp, maxLines = 1)
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = custom,
+                    onValueChange = { custom = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    placeholder = { Text("Otro género…", color = TextSecondary, fontSize = 13.sp) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White, unfocusedTextColor = Color.White,
+                        cursorColor = Color.White, focusedBorderColor = Purple,
+                        unfocusedBorderColor = TextSecondary
+                    ),
+                    trailingIcon = {
+                        IconButton(onClick = {
+                            if (custom.isNotBlank()) {
+                                MusicRepository.updateGenre(song.id, custom.trim())
+                                onDismiss()
+                            }
+                        }) { Icon(Icons.Filled.Check, null, tint = Pink) }
+                    }
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Cerrar", color = Purple) }
+        }
+    )
 }
 
 // Diálogo para elegir (o crear) una lista y añadir la canción
@@ -112,29 +200,3 @@ fun AddToPlaylistDialog(song: Song?, onDismiss: () -> Unit) {
                     singleLine = true,
                     placeholder = { Text("Crear lista nueva…", color = TextSecondary, fontSize = 13.sp) },
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White, unfocusedTextColor = Color.White,
-                        cursorColor = Color.White, focusedBorderColor = Purple,
-                        unfocusedBorderColor = TextSecondary
-                    ),
-                    trailingIcon = {
-                        IconButton(onClick = {
-                            val id = PlaylistRepository.create(newName)
-                            if (id.isNotEmpty()) {
-                                PlaylistRepository.addSong(id, song.id)
-                                msg = "Lista creada y canción añadida ✓"
-                                newName = ""
-                            }
-                        }) { Icon(Icons.Filled.Add, null, tint = Pink) }
-                    }
-                )
-                if (msg.isNotEmpty()) {
-                    Spacer(Modifier.height(8.dp))
-                    Text(msg, color = if (msg.startsWith("Ya estaba")) Pink else Cyan, fontSize = 12.sp)
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Cerrar", color = Purple) }
-        }
-    )
-}
