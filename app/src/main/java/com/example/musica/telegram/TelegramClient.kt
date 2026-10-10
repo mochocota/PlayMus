@@ -32,7 +32,8 @@ data class TgAudio(
     val artist: String,
     val duration: Int,
     val fileSize: Long,
-    val caption: String
+    val caption: String,
+    val fileName: String
 )
 
 // ---------- Cliente de la API de Bot de Telegram ----------
@@ -97,15 +98,15 @@ class TelegramClient(private val token: String) {
             if (fileId.isEmpty()) return null
 
             val fileName = audio.optString("file_name", "")
+            val baseName = fileName.replace(
+                Regex("\\.(mp3|m4a|ogg|wav|flac|opus)$", RegexOption.IGNORE_CASE), ""
+            )
             var title = audio.optString("title", "")
             var artist = audio.optString("performer", "")
             if (title.isEmpty()) {
-                val base = fileName
-                    .removeSuffix(".mp3").removeSuffix(".m4a")
-                    .removeSuffix(".ogg").removeSuffix(".wav")
-                val parts = base.split(" - ", limit = 2)
+                val parts = baseName.split(" - ", limit = 2)
                 if (parts.size == 2) { artist = parts[0].trim(); title = parts[1].trim() }
-                else title = base
+                else title = baseName
             }
             if (artist.isEmpty()) artist = "Desconocido"
             if (title.isEmpty()) title = "Sin título"
@@ -116,7 +117,8 @@ class TelegramClient(private val token: String) {
                 artist = artist,
                 duration = audio.optInt("duration", 0),
                 fileSize = audio.optLong("file_size", 0L),
-                caption = msg.optString("caption", msg.optString("text", ""))
+                caption = msg.optString("caption", msg.optString("text", "")),
+                fileName = fileName
             )
         }
     }
