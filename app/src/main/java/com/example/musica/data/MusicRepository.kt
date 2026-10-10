@@ -25,8 +25,15 @@ object MusicRepository {
 
     fun init(ctx: Context) {
         context = ctx.applicationContext
+        coversDir().mkdirs()
         load()
     }
+
+    // ---------- Carátulas ----------
+    private fun coversDir() = File(context.filesDir, "covers")
+    fun coverFile(id: Int) = File(coversDir(), "$id.img")
+
+    fun pendingCount(): Int = _songs.value.count { it.fromTelegram && !it.metaDone }
 
     // ---------- Consultas ----------
     fun genresWithCount(): List<Pair<String, Int>> =
@@ -35,8 +42,12 @@ object MusicRepository {
     fun songsByGenre(genre: String): List<Song> =
         if (genre == "Todas") _songs.value else _songs.value.filter { it.genre == genre }
 
+    fun albums(): List<Pair<String, List<Song>>> =
+        _songs.value.groupBy { it.album.ifBlank { "Sencillos" } }.toList()
+            .sortedBy { it.first.lowercase() }
+
     fun artistCount(): Int = _songs.value.map { it.artist }.distinct().size
-    fun albumCount(): Int = _songs.value.map { it.album }.filter { it.isNotBlank() }.distinct().size
+    fun albumCount(): Int = albums().size
 
     // ---------- Sincronización con Telegram ----------
     suspend fun sync(): String = mutex.withLock {
@@ -61,7 +72,7 @@ object MusicRepository {
             for (u in updates) {
                 val a = TelegramClient.extractAudio(u) ?: continue
                 if (a.fileId in known) continue
-                if (a.fileSize > 19_500_000) { skipped++; continue } // límite de bots: 20 MB
+                if (a.fileSize > 19_500_000) { skipped++; continue }
                 known.add(a.fileId)
                 result.add(
                     0, Song(
@@ -78,68 +89,97 @@ object MusicRepository {
             _songs.value = result
             save()
 
-            // Confirmar las actualizaciones como leídas (no se repiten)
             val maxId = updates.maxOfOrNull { it.optLong("update_id", -1L) } ?: -1L
             if (maxId >= 0) {
                 TelegramConfig.saveOffset(context, maxId + 1)
                 try { client.getUpdates(maxId + 1, timeoutSec = 0) } catch (_: Exception) {}
             }
 
-            // Leer el género real (etiqueta ID3) de algunas canciones sin hashtag
-            val detected = scanPendingGenres(client, limit = 8)
+            // Escanear metadatos (carátula, álbum, género) de un lote pendiente
+            val covers = scanLocked(limit = 8)
 
             val sb = StringBuilder("Sincronizado: $added canciones nuevas")
             if (skipped > 0) sb.append(" · $skipped omitidas (>20MB)")
-            if (detected > 0) sb.append(" · $detected géneros detectados")
-            if (updates.isEmpty() && added == 0) sb.append(" (sin cambios)")
+            if (covers > 0) sb.append(" · $covers carátulas añadidas")
+            if (updates.isEmpty() && added == 0 && covers == 0) sb.append(" (sin cambios)")
             sb.toString()
         }
     }
 
-    // Descarga solo los metadatos (no el archivo completo) para detectar el género ID3
-    private suspend fun scanPendingGenres(client: TelegramClient, limit: Int): Int =
-        withContext(Dispatchers.IO) {
-            var detected = 0
-            val pending = _songs.value.filter { it.fromTelegram && !it.scanned }.take(limit)
-            val updated = _songs.value.toMutableList()
-            for (song in pending) {
-                val mapped = try {
-                    val url = client.fileUrl(client.getFilePath(song.fileId))
-                    val retriever = MediaMetadataRetriever()
-                    val g = try {
-                        retriever.setDataSource(url)
-                        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_GENRE)
-                    } finally {
-                        retriever.release()
+    // Escaneo público (lo llama la pantalla Biblioteca en segundo plano)
+    suspend fun scanPending(limit: Int = 8): Int = mutex.withLock { scanLocked(limit) }
+
+    // Extrae metadatos ID3: título, artista, álbum, género y carátula incrustada
+    private suspend fun scanLocked(limit: Int): Int = withContext(Dispatchers.IO) {
+        val token = TelegramConfig.token(context)
+        if (token.isBlank()) return@withContext 0
+
+        val pending = _songs.value.filter { it.fromTelegram && !it.metaDone }.take(limit)
+        if (pending.isEmpty()) return@withContext 0
+
+        val client = TelegramClient(token)
+        val updated = _songs.value.toMutableList()
+        var covers = 0
+
+        for (song in pending) {
+            val idx = updated.indexOfFirst { it.id == song.id }
+            if (idx < 0) continue
+            var newSong = updated[idx].copy(metaDone = true)
+            try {
+                val url = client.fileUrl(client.getFilePath(song.fileId))
+                val r = MediaMetadataRetriever()
+                try {
+                    r.setDataSource(url)
+                    val t = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
+                    val a = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                    val al = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)
+                    val g = r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_GENRE)
+                    val art = r.embeddedPicture
+
+                    if (!art.isNullOrEmpty()) {
+                        try {
+                            val f = coverFile(song.id)
+                            f.parentFile?.mkdirs()
+                            f.writeBytes(art)
+                            newSong = newSong.copy(coverPath = f.absolutePath)
+                            covers++
+                        } catch (_: Exception) {}
                     }
-                    mappedGenre(g)
-                } catch (_: Exception) { null }
-                val index = updated.indexOfFirst { it.id == song.id }
-                if (index >= 0) {
-                    updated[index] = updated[index].copy(genre = mapped ?: "Otros", scanned = true)
-                    if (mapped != null) detected++
+                    newSong = newSong.copy(
+                        title = t?.takeIf { it.isNotBlank() } ?: newSong.title,
+                        artist = a?.takeIf { it.isNotBlank() } ?: newSong.artist,
+                        album = al?.takeIf { it.isNotBlank() } ?: newSong.album,
+                        genre = if (newSong.genre == "Otros") (mappedGenre(g) ?: "Otros") else newSong.genre
+                    )
+                } finally {
+                    r.release()
                 }
-            }
-            if (pending.isNotEmpty()) { _songs.value = updated; save() }
-            detected
+            } catch (_: Exception) {}
+            updated[idx] = newSong
         }
+        _songs.value = updated
+        save()
+        covers
+    }
 
     // ---------- Géneros ----------
     private fun norm(s: String): String = Normalizer.normalize(s, Normalizer.Form.NFD)
         .replace(Regex("\\p{M}+"), "").lowercase().trim()
 
-    private val genreNames = listOf(
-        "Pop", "Rock", "Balada", "Salsa", "Grupera", "Cumbia", "Banda",
-        "Reggaetón", "Electrónica", "Hip Hop", "Jazz", "Clásica",
-        "Vallenato", "Norteño", "Ranchera"
-    )
+    // 1º intento: hashtag exacto. 2º: difuso (ej. "#corridostumbados")
+    private fun genreFromTags(text: String): String? {
+        val tags = Regex("#\\s*([\\p{L}]+)").findAll(text).map { norm(it.groupValues[1]) }.toList()
+        for (t in tags) for ((k, v) in genreMap) if (t == k) return v
+        for (t in tags) for ((k, v) in genreMap) if (k.length > 3 && (t.contains(k) || k.contains(t))) return v
+        return null
+    }
 
     private fun genreFromCaption(caption: String): String {
-        val tags = Regex("#\\s*([\\p{L}]+)").findAll(caption).map { norm(it.groupValues[1]) }.toList()
-        for (g in genreNames) if (norm(g) in tags) return g
+        genreFromTags(caption)?.let { return it }
         val after = Regex("g[eé]nero\\s*:\\s*([\\p{L} ]+)").find(caption)?.groupValues?.get(1)?.trim()
         if (after != null) {
-            for (g in genreNames) if (norm(g) in norm(after)) return g
+            val n = norm(after)
+            for ((k, v) in genreMap) if (k in n) return v
             return after.replaceFirstChar { it.uppercase() }
         }
         return "Otros"
@@ -148,12 +188,12 @@ object MusicRepository {
     private fun mappedGenre(raw: String?): String? {
         if (raw.isNullOrBlank()) return null
         val n = norm(raw)
-        for (g in genreNames) if (n.contains(norm(g))) return g
+        for ((k, v) in genreMap) if (k in n) return v
         return raw.split("/", "(", "-").first().trim()
             .replaceFirstChar { it.uppercase() }.ifBlank { null }
     }
 
-    // ---------- Almacenamiento local (JSON en el teléfono) ----------
+    // ---------- Almacenamiento local (JSON) ----------
     private fun file() = File(context.filesDir, "library.json")
 
     private fun save() {
@@ -166,6 +206,7 @@ object MusicRepository {
                         .put("album", s.album).put("durationSec", s.durationSec)
                         .put("fileId", s.fileId).put("genre", s.genre)
                         .put("fromTelegram", s.fromTelegram).put("scanned", s.scanned)
+                        .put("coverPath", s.coverPath).put("metaDone", s.metaDone)
                 )
             }
             file().writeText(arr.toString())
@@ -186,7 +227,9 @@ object MusicRepository {
                     fileId = o.optString("fileId"),
                     genre = o.optString("genre", "Otros"),
                     fromTelegram = o.optBoolean("fromTelegram"),
-                    scanned = o.optBoolean("scanned")
+                    scanned = o.optBoolean("scanned"),
+                    coverPath = o.optString("coverPath", ""),
+                    metaDone = o.optBoolean("metaDone")
                 )
             }
             _songs.value = list
