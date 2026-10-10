@@ -34,6 +34,8 @@ import com.example.musica.data.MusicRepository
 import com.example.musica.player.PlayerViewModel
 import com.example.musica.telegram.TelegramConfig
 import com.example.musica.ui.components.MiniPlayer
+import com.example.musica.ui.screens.AlbumSongsScreen
+import com.example.musica.ui.screens.AlbumsScreen
 import com.example.musica.ui.screens.ArtistsScreen
 import com.example.musica.ui.screens.DetailScreen
 import com.example.musica.ui.screens.ExploreScreen
@@ -72,7 +74,6 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
     val tabs = listOf("home", "explore", "library")
     val context = LocalContext.current
 
-    // Sincronización automática al abrir (si hay bot configurado y biblioteca vacía)
     LaunchedEffect(Unit) {
         if (TelegramConfig.token(context).isNotBlank() && MusicRepository.songs.value.isEmpty()) {
             try { MusicRepository.sync() } catch (_: Exception) {}
@@ -94,7 +95,7 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
             composable("splash") { SplashScreen(nav) }
             composable("home") { HomeScreen(nav, vm) }
             composable("explore") { ExploreScreen(nav) }
-            composable("library") { LibraryScreen(nav) }
+            composable("library") { LibraryScreen(nav, vm) }
             composable("player") { NowPlayingScreen(nav, vm) }
             composable("queue") { QueueScreen(nav, vm) }
             composable("playlists") { PlaylistsScreen(nav) }
@@ -104,8 +105,12 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
             composable("artists") { ArtistsScreen(nav) }
             composable("settings") { SettingsScreen(nav) }
             composable("genres") { GenresScreen(nav) }
+            composable("albums") { AlbumsScreen(nav) }
             composable("genre/{name}") { b ->
                 SongListScreen(nav, vm, Uri.decode(b.arguments?.getString("name").orEmpty()))
+            }
+            composable("album/{name}") { b ->
+                AlbumSongsScreen(nav, vm, Uri.decode(b.arguments?.getString("name").orEmpty()))
             }
             composable("telegram") { TelegramSetupScreen(nav) }
         }
