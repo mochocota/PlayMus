@@ -71,7 +71,7 @@ import com.example.musica.ui.theme.TextSecondary
 import com.example.musica.ui.theme.TrackColor
 import com.google.android.gms.cast.framework.CastButtonFactory
 import com.google.android.gms.cast.framework.CastContext
-import com.google.android.gms.cast.framework.widgets.MediaRouteButton
+import androidx.mediarouter.app.MediaRouteButton
 import kotlinx.coroutines.delay
 
 @Composable
