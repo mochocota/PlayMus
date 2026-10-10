@@ -8,7 +8,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Cloud
@@ -50,7 +49,7 @@ import com.example.musica.player.PlayerViewModel
 import com.example.musica.telegram.TelegramConfig
 import com.example.musica.ui.components.AddToPlaylistDialog
 import com.example.musica.ui.components.AlbumArt
-import com.example.musica.ui.components.CoverImage
+import com.example.musica.ui.components.SongRow
 import com.example.musica.ui.components.SectionHeader
 import com.example.musica.ui.theme.CardDark
 import com.example.musica.ui.theme.CardLighter
@@ -169,18 +168,7 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
         SectionHeader("Tus canciones", "Ver todo")
         if (songs.isNotEmpty()) {
             songs.take(4).forEach { s ->
-                Row(Modifier.fillMaxWidth().clickable { vm.play(s, songs) }.padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    CoverImage(s, Modifier.size(46.dp), corner = 10.dp)
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(s.title, color = Color.White, fontSize = 14.sp, maxLines = 1)
-                        Text(s.artist, color = TextSecondary, fontSize = 12.sp, maxLines = 1)
-                    }
-                    IconButton(onClick = { songToAdd = s }) {
-                        Icon(Icons.Filled.Add, "Añadir a lista", tint = Purple)
-                    }
-                }
+                SongRow(song = s, list = songs, vm = vm, onAdd = { songToAdd = s })
             }
         } else {
             recents.forEach { r ->
