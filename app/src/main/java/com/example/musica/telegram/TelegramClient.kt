@@ -1,0 +1,123 @@
+package com.example.musica.telegram
+
+import android.content.Context
+import org.json.JSONObject
+import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
+
+// ---------- Configuración guardada en el teléfono ----------
+object TelegramConfig {
+    private const val PREFS = "telegram_prefs"
+
+    private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    fun token(ctx: Context): String = prefs(ctx).getString("token", "") ?: ""
+    fun channel(ctx: Context): String = prefs(ctx).getString("channel", "") ?: ""
+    fun offset(ctx: Context): Long = prefs(ctx).getLong("offset", 0L)
+
+    fun save(ctx: Context, token: String, channel: String) {
+        prefs(ctx).edit().putString("token", token.trim()).putString("channel", channel.trim()).apply()
+    }
+
+    fun saveOffset(ctx: Context, offset: Long) {
+        prefs(ctx).edit().putLong("offset", offset).apply()
+    }
+}
+
+// ---------- Canción que llega desde Telegram ----------
+data class TgAudio(
+    val fileId: String,
+    val title: String,
+    val artist: String,
+    val duration: Int,
+    val fileSize: Long,
+    val caption: String
+)
+
+// ---------- Cliente de la API de Bot de Telegram ----------
+class TelegramClient(private val token: String) {
+
+    private fun api(method: String, params: String, timeoutSec: Int = 15): JSONObject {
+        val conn = URL("https://api.telegram.org/bot$token/$method")
+            .openConnection() as HttpURLConnection
+        return try {
+            conn.requestMethod = "POST"
+            conn.doOutput = true
+            conn.connectTimeout = 15000
+            conn.readTimeout = (timeoutSec + 10) * 1000
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.outputStream.use { it.write(params.toByteArray()) }
+            val code = conn.responseCode
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val body = stream?.bufferedReader()?.readText() ?: ""
+            if (code !in 200..299) throw IOException("HTTP $code: $body")
+            val json = JSONObject(body)
+            if (!json.optBoolean("ok")) throw IOException(json.optString("description", "Error de Telegram"))
+            json
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    fun getMe(): String = api("getMe", "{}").getJSONObject("result").optString("username")
+
+    fun deleteWebhook() {
+        try { api("deleteWebhook", "{}") } catch (_: Exception) {}
+    }
+
+    fun getUpdates(offset: Long, timeoutSec: Int = 10): List<JSONObject> {
+        val res = api(
+            "getUpdates",
+            """{"offset":$offset,"timeout":$timeoutSec,"allowed_updates":["message","channel_post"]}""",
+            timeoutSec
+        )
+        val arr = res.getJSONArray("result")
+        return (0 until arr.length()).map { arr.getJSONObject(it) }
+    }
+
+    fun getFilePath(fileId: String): String {
+        val res = api("getFile", """{"file_id":"$fileId"}""")
+        return res.getJSONObject("result").optString("file_path", "")
+    }
+
+    fun fileUrl(filePath: String): String = "https://api.telegram.org/file/bot$token/$filePath"
+
+    companion object {
+        // Extrae el audio de un "update" (publicación de canal o mensaje)
+        fun extractAudio(update: JSONObject): TgAudio? {
+            val msg = update.optJSONObject("channel_post")
+                ?: update.optJSONObject("message")
+                ?: return null
+            val audio = msg.optJSONObject("audio")
+                ?: msg.optJSONObject("document")
+                    ?.takeIf { it.optString("mime_type", "").startsWith("audio") }
+                ?: return null
+            val fileId = audio.optString("file_id", "")
+            if (fileId.isEmpty()) return null
+
+            val fileName = audio.optString("file_name", "")
+            var title = audio.optString("title", "")
+            var artist = audio.optString("performer", "")
+            if (title.isEmpty()) {
+                val base = fileName
+                    .removeSuffix(".mp3").removeSuffix(".m4a")
+                    .removeSuffix(".ogg").removeSuffix(".wav")
+                val parts = base.split(" - ", limit = 2)
+                if (parts.size == 2) { artist = parts[0].trim(); title = parts[1].trim() }
+                else title = base
+            }
+            if (artist.isEmpty()) artist = "Desconocido"
+            if (title.isEmpty()) title = "Sin título"
+
+            return TgAudio(
+                fileId = fileId,
+                title = title,
+                artist = artist,
+                duration = audio.optInt("duration", 0),
+                fileSize = audio.optLong("file_size", 0L),
+                caption = msg.optString("caption", msg.optString("text", ""))
+            )
+        }
+    }
+}
