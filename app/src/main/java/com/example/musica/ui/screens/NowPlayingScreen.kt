@@ -47,6 +47,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
+import com.example.musica.data.FavoritesRepository
 import com.example.musica.data.LyricLine
 import com.example.musica.data.LyricsRepository
 import com.example.musica.data.LyricsResult
@@ -70,8 +71,10 @@ import kotlinx.coroutines.delay
 @Composable
 fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
     val song = vm.current
-    var liked by remember { mutableStateOf(false) }
+    val favIds by FavoritesRepository.ids.collectAsState()
+    val liked = song != null && song.id in favIds
     var showFavAnim by remember { mutableStateOf(false) }
+    var favMsg by remember { mutableStateOf("") }
     var dragging by remember { mutableStateOf(false) }
     var dragValue by remember { mutableStateOf(0f) }
     var songToAdd by remember { mutableStateOf<Song?>(null) }
@@ -150,8 +153,14 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                                     color = TextSecondary, fontSize = 13.sp, maxLines = 1)
                             }
                             IconButton(onClick = {
-                                liked = !liked
-                                if (liked) showFavAnim = true
+                                val nowFav = FavoritesRepository.toggle(song.id)
+                                if (nowFav) {
+                                    favMsg = "Agregado a favoritos"
+                                    showFavAnim = true
+                                } else {
+                                    favMsg = "Eliminado de favoritos"
+                                    showFavAnim = true
+                                }
                             }) {
                                 Icon(if (liked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
                                     null, tint = if (liked) Pink else Color.White)
@@ -250,9 +259,15 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                     .padding(horizontal = 28.dp, vertical = 20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Icon(Icons.Filled.Favorite, null, tint = Pink, modifier = Modifier.size(52.dp))
+                Icon(
+                    if (favMsg == "Agregado a favoritos") Icons.Filled.Favorite
+                    else Icons.Filled.FavoriteBorder,
+                    null,
+                    tint = if (favMsg == "Agregado a favoritos") Pink else TextSecondary,
+                    modifier = Modifier.size(52.dp)
+                )
                 Spacer(Modifier.height(10.dp))
-                Text("Agregado a favoritos", color = Color.White,
+                Text(favMsg, color = Color.White,
                     fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
             }
         }
@@ -262,8 +277,7 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
 }
 
 // ============================================================
-// Vista de letra: ocupa casi toda la pantalla; abajo solo la
-// miniatura de la carátula y el nombre de la canción.
+// Vista de letra
 // ============================================================
 @Composable
 private fun LyricsView(
@@ -291,7 +305,6 @@ private fun LyricsView(
         }
         Spacer(Modifier.height(10.dp))
 
-        // ---------- Contenido de la letra ----------
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
                 loading -> {
@@ -350,7 +363,6 @@ private fun LyricsView(
 
         Spacer(Modifier.height(8.dp))
 
-        // ---------- Barra inferior: miniatura + nombre ----------
         Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
             .background(CardLighter).clickable(onClick = onClose).padding(10.dp),
             verticalAlignment = Alignment.CenterVertically) {
@@ -371,8 +383,7 @@ private fun LyricsView(
     }
 }
 
-// Letra sincronizada: resalta la línea que suena y se desplaza sola.
-// Tocar una línea salta la canción a ese momento.
+// Letra sincronizada
 @Composable
 private fun SyncedLyrics(lines: List<LyricLine>, vm: PlayerViewModel) {
     val listState = rememberLazyListState()
