@@ -146,8 +146,8 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
                 Triple(Icons.Filled.MusicNote, "Canciones", "${songs.size}") to "genre/Todas",
                 Triple(Icons.Filled.Category, "Géneros",
                     "${MusicRepository.genresWithCount().size}") to "genres",
-                Triple(Icons.AutoMirrored.Filled.QueueMusic, "Listas de reproducción",
-                    "${userLists.size + playlists.size}") to "playlists"
+                            Triple(Icons.AutoMirrored.Filled.QueueMusic, "Listas de reproducción",
+                "${userLists.size + 1}") to "playlists"
             )
             rows.forEach { (t, route) ->
                 val (icon, label, count) = t
