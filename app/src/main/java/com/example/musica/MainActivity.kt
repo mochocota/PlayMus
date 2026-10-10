@@ -31,6 +31,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.musica.data.MusicRepository
+import com.example.musica.data.PlaylistRepository
 import com.example.musica.player.PlayerViewModel
 import com.example.musica.telegram.TelegramConfig
 import com.example.musica.ui.components.MiniPlayer
@@ -45,10 +46,12 @@ import com.example.musica.ui.screens.LibraryScreen
 import com.example.musica.ui.screens.NowPlayingScreen
 import com.example.musica.ui.screens.PlaylistsScreen
 import com.example.musica.ui.screens.QueueScreen
+import com.example.musica.ui.screens.SearchScreen
 import com.example.musica.ui.screens.SettingsScreen
 import com.example.musica.ui.screens.SongListScreen
 import com.example.musica.ui.screens.SplashScreen
 import com.example.musica.ui.screens.TelegramSetupScreen
+import com.example.musica.ui.screens.UserPlaylistScreen
 import com.example.musica.ui.theme.BottomBarBg
 import com.example.musica.ui.theme.MusicaTheme
 import com.example.musica.ui.theme.NavyBg
@@ -59,6 +62,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         MusicRepository.init(applicationContext)
+        PlaylistRepository.init(applicationContext)
         setContent {
             MusicaTheme {
                 AppRoot()
@@ -102,10 +106,14 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
             composable("playlist/{id}") { b ->
                 DetailScreen(nav, vm, b.arguments?.getString("id").orEmpty())
             }
+            composable("userplaylist/{id}") { b ->
+                UserPlaylistScreen(nav, vm, b.arguments?.getString("id").orEmpty())
+            }
             composable("artists") { ArtistsScreen(nav) }
             composable("settings") { SettingsScreen(nav) }
             composable("genres") { GenresScreen(nav) }
             composable("albums") { AlbumsScreen(nav) }
+            composable("search") { SearchScreen(nav, vm) }
             composable("genre/{name}") { b ->
                 SongListScreen(nav, vm, Uri.decode(b.arguments?.getString("name").orEmpty()))
             }
