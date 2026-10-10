@@ -32,21 +32,23 @@ object MusicRepository {
     private lateinit var context: Context
 
     // ============================================================
-    // PARÁMETROS DE VELOCIDAD DEL ESCANEO
-    // SCAN_PARALLEL = cuántas canciones se analizan A LA VEZ
-    // SCAN_BATCH = cuántas se procesan por tanda
+    // PARÁMETROS DE VELOCIDAD
     // ============================================================
     private const val SCAN_PARALLEL = 6
     private const val SCAN_BATCH = 24
     private const val ONLINE_PARALLEL = 4
     private const val ONLINE_BATCH = 8
 
+    // Intentos de búsqueda online por canción (máximo 3; luego se rinde)
+    private val MAX_ONLINE_ATTEMPTS = 3
+    private val attempts = ConcurrentHashMap<Int, Int>()
+
     fun init(ctx: Context) {
         context = ctx.applicationContext
         coversDir().mkdirs()
         load()
+        loadAttempts()
         reclassifyLite()
-        resetOnlineTries()
     }
 
     // ---------- Carátulas ----------
@@ -55,10 +57,12 @@ object MusicRepository {
 
     fun pendingCount(): Int = _songs.value.count { it.fromTelegram && !it.metaDone }
 
-    fun pendingOnlineCount(): Int = _songs.value.count {
-        it.fromTelegram && it.genre == "Otros" && !it.scanned &&
-                it.artist.isNotBlank() && it.artist != "Desconocido" &&
-                it.title.isNotBlank() && it.title.length >= 3
+    // Canciones pendientes de buscar género online:
+    // quedaron en "Otros", tienen título utilizable y no agotaron sus intentos
+    fun pendingOnlineCount(): Int = _songs.value.count { s ->
+        s.fromTelegram && s.genre == "Otros" &&
+                (attempts[s.id] ?: 0) < MAX_ONLINE_ATTEMPTS &&
+                s.title.isNotBlank() && s.title.length >= 3
     }
 
     // ---------- Consultas ----------
@@ -170,9 +174,8 @@ object MusicRepository {
     suspend fun enrichOnline(limit: Int = ONLINE_BATCH): Int = mutex.withLock { enrichLocked(limit) }
 
     // ============================================================
-    // ESCANEO EN PARALELO: analiza hasta SCAN_PARALLEL canciones
-    // a la vez (antes era de una en una). Extrae carátula, título,
-    // artista, álbum y género de los metadatos ID3.
+    // ESCANEO EN PARALELO de metadatos ID3 (carátula, título,
+    // artista, álbum, género). Hasta SCAN_PARALLEL a la vez.
     // ============================================================
     private suspend fun scanLocked(limit: Int): Int = withContext(Dispatchers.IO) {
         val token = TelegramConfig.token(context)
@@ -201,7 +204,6 @@ object MusicRepository {
         covers
     }
 
-    // Analiza UNA canción (se ejecuta en paralelo con otras)
     private fun scanOne(client: TelegramClient, song: Song): Song {
         var newSong = song.copy(metaDone = true)
         try {
@@ -223,9 +225,24 @@ object MusicRepository {
                         newSong = newSong.copy(coverPath = f.absolutePath)
                     } catch (_: Exception) {}
                 }
+
+                var finalTitle = t?.takeIf { it.isNotBlank() } ?: newSong.title
+                var finalArtist = a?.takeIf { it.isNotBlank() } ?: newSong.artist
+
+                // Si no hay artista pero el título trae "Artista - Título", separar
+                if (finalArtist.isBlank() || finalArtist == "Desconocido") {
+                    if (finalTitle.contains(" - ")) {
+                        val parts = finalTitle.split(" - ", limit = 2)
+                        if (parts.size == 2 && parts[0].isNotBlank()) {
+                            finalArtist = parts[0].trim()
+                            finalTitle = parts[1].trim()
+                        }
+                    }
+                }
+
                 newSong = newSong.copy(
-                    title = t?.takeIf { it.isNotBlank() } ?: newSong.title,
-                    artist = a?.takeIf { it.isNotBlank() } ?: newSong.artist,
+                    title = finalTitle,
+                    artist = finalArtist,
                     album = al?.takeIf { it.isNotBlank() } ?: newSong.album,
                     genre = if (newSong.genre == "Otros")
                         (detectGenre(newSong.caption, newSong.fileName, g) ?: "Otros")
@@ -240,43 +257,89 @@ object MusicRepository {
 
     // ============================================================
     // BÚSQUEDA ONLINE EN PARALELO (iTunes primero, Deezer respaldo)
+    // Cada canción tiene MAX_ONLINE_ATTEMPTS intentos en total.
+    // Si acierta: asigna género y adopta artista/álbum correctos.
     // ============================================================
+    private data class OnlineHit(
+        val genre: String,
+        val artist: String?,
+        val album: String?
+    )
+
     private suspend fun enrichLocked(limit: Int): Int = withContext(Dispatchers.IO) {
-        val candidates = _songs.value.filter {
-            it.fromTelegram && it.genre == "Otros" && !it.scanned &&
-                    it.artist.isNotBlank() && it.artist != "Desconocido" &&
-                    it.title.isNotBlank() && it.title.length >= 3
+        val candidates = _songs.value.filter { s ->
+            s.fromTelegram && s.genre == "Otros" &&
+                    (attempts[s.id] ?: 0) < MAX_ONLINE_ATTEMPTS &&
+                    s.title.isNotBlank() && s.title.length >= 3
         }.take(limit)
         if (candidates.isEmpty()) return@withContext 0
 
         val sem = Semaphore(ONLINE_PARALLEL)
-        val results = ConcurrentHashMap<Int, String?>()
+        val results = ConcurrentHashMap<Int, OnlineHit>()
 
         val jobs = candidates.map { song ->
             launch {
                 sem.withPermit {
+                    // Contar el intento SIEMPRE (éxito o fallo)
+                    attempts[song.id] = (attempts[song.id] ?: 0) + 1
                     results[song.id] = lookupGenreOnline(song.title, song.artist)
                 }
             }
         }
         jobs.joinAll()
+        saveAttempts()
 
         if (results.isEmpty()) return@withContext 0
         val got = results.values.count { it != null }
         _songs.value = _songs.value.map { s ->
-            if (results.containsKey(s.id)) s.copy(scanned = true, genre = results[s.id] ?: s.genre)
-            else s
+            val hit = results[s.id] ?: return@map s
+            var updated = s
+            if (hit != null) {
+                updated = updated.copy(genre = hit.genre, scanned = true)
+                // Adopta artista/álbum reales si los nuestros estaban vacíos/genéricos
+                if ((s.artist.isBlank() || s.artist == "Desconocido") &&
+                    !hit.artist.isNullOrBlank()) {
+                    updated = updated.copy(artist = hit.artist)
+                }
+                if (s.album.isBlank() && !hit.album.isNullOrBlank()) {
+                    updated = updated.copy(album = hit.album)
+                }
+            }
+            updated
         }
         save()
         got
     }
 
-    // Consulta iTunes primero; si no hay suerte, Deezer
-    private fun lookupGenreOnline(title: String, artist: String): String? {
+    // ---------- Limpieza de títulos para buscar ----------
+    private fun cleanForSearch(raw: String): String = raw
+        .replace(Regex("\\(.*?\\)"), " ")
+        .replace(Regex("\\[.*?\\]"), " ")
+        .replace(Regex("\\b(official|video|audio|letra|lyrics|lyric|hd|hq|4k|remaster(ed)?|vizualizer|visualizer)\\b.*", RegexOption.IGNORE_CASE), " ")
+        .replace(Regex("\\b(ft|feat|featuring|con)\\..*$", RegexOption.IGNORE_CASE), " ")
+        .replace(Regex("\\s+"), " ").trim()
+
+    // Consulta iTunes primero; si no hay suerte, Deezer.
+    // Devuelve género + artista/álbum oficiales si los encuentra.
+    private fun lookupGenreOnline(titleRaw: String, artistRaw: String): OnlineHit? {
+        var title = cleanForSearch(titleRaw)
+        var artist = artistRaw.takeIf { it.isNotBlank() && it != "Desconocido" } ?: ""
+
+        // Si no hay artista pero el título trae "Artista - Título", separar
+        if (artist.isBlank() && title.contains(" - ")) {
+            val parts = title.split(" - ", limit = 2)
+            if (parts.size == 2 && parts[0].isNotBlank()) {
+                artist = parts[0].trim()
+                title = parts[1].trim()
+            }
+        }
+        if (title.isBlank()) return null
+
         // ---------- 1) iTunes Search API ----------
         try {
-            val q = URLEncoder.encode("$artist $title", "UTF-8")
-            val conn = URL("https://itunes.apple.com/search?term=$q&entity=song&limit=1")
+            val term = listOf(artist, title).filter { it.isNotBlank() }.joinToString(" ")
+            val q = URLEncoder.encode(term, "UTF-8")
+            val conn = URL("https://itunes.apple.com/search?term=$q&entity=song&limit=3")
                 .openConnection() as HttpURLConnection
             try {
                 conn.connectTimeout = 8000
@@ -284,12 +347,18 @@ object MusicRepository {
                 conn.setRequestProperty("User-Agent", "MusicaApp/1.0")
                 val body = conn.inputStream.bufferedReader().readText()
                 val arr = JSONObject(body).optJSONArray("results")
-                if (arr != null && arr.length() > 0) {
-                    val hit = arr.getJSONObject(0)
-                    val t = hit.optString("trackName", "")
-                    val g = hit.optString("primaryGenreName", "")
-                    if (g.isNotBlank() && titleMatches(t, title)) {
-                        mappedGenre(g)?.let { return it }
+                if (arr != null) {
+                    for (i in 0 until arr.length()) {
+                        val hit = arr.getJSONObject(i)
+                        val t = hit.optString("trackName", "")
+                        val g = hit.optString("primaryGenreName", "")
+                        if (g.isNotBlank() && titleMatches(t, title)) {
+                            return OnlineHit(
+                                genre = mappedGenre(g) ?: g,
+                                artist = hit.optString("artistName", "").ifBlank { null },
+                                album = hit.optString("collectionName", "").ifBlank { null }
+                            )
+                        }
                     }
                 }
             } finally {
@@ -299,8 +368,11 @@ object MusicRepository {
 
         // ---------- 2) Deezer (respaldo) ----------
         try {
-            val q = URLEncoder.encode("artist:\"$artist\" track:\"$title\"", "UTF-8")
-            val conn = URL("https://api.deezer.com/search?q=$q&limit=1")
+            val q = if (artist.isNotBlank())
+                URLEncoder.encode("artist:\"$artist\" track:\"$title\"", "UTF-8")
+            else
+                URLEncoder.encode("track:\"$title\"", "UTF-8")
+            val conn = URL("https://api.deezer.com/search?q=$q&limit=3")
                 .openConnection() as HttpURLConnection
             try {
                 conn.connectTimeout = 8000
@@ -308,10 +380,12 @@ object MusicRepository {
                 conn.setRequestProperty("User-Agent", "MusicaApp/1.0")
                 val body = conn.inputStream.bufferedReader().readText()
                 val data = JSONObject(body).optJSONArray("data")
-                if (data != null && data.length() > 0) {
-                    val track = data.getJSONObject(0)
-                    val t = track.optString("title_short", track.optString("title", ""))
-                    if (titleMatches(t, title)) {
+                if (data != null) {
+                    for (i in 0 until data.length()) {
+                        val track = data.getJSONObject(i)
+                        val t = track.optString("title_short", track.optString("title", ""))
+                        if (!titleMatches(t, title)) continue
+                        // Género del álbum
                         val albumId = track.optJSONObject("album")?.optLong("id") ?: 0L
                         if (albumId > 0) {
                             try {
@@ -326,7 +400,13 @@ object MusicRepository {
                                     if (genres != null && genres.length() > 0) {
                                         val gname = genres.getJSONObject(0).optString("name", "")
                                         if (gname.isNotBlank()) {
-                                            mappedGenre(gname)?.let { return it }
+                                            val artistName = track.optJSONObject("artist")
+                                                ?.optString("name", "")?.ifBlank { null }
+                                            return OnlineHit(
+                                                genre = mappedGenre(gname) ?: gname,
+                                                artist = artistName,
+                                                album = album.optString("title", "").ifBlank { null }
+                                            )
                                         }
                                     }
                                 } finally {
@@ -472,15 +552,24 @@ object MusicRepository {
         return count
     }
 
-    // Da una nueva oportunidad de búsqueda online en cada arranque de la app
-    private fun resetOnlineTries() {
-        val updated = _songs.value.map {
-            if (it.fromTelegram && it.genre == "Otros" && it.scanned) it.copy(scanned = false) else it
-        }
-        if (updated != _songs.value) {
-            _songs.value = updated
-            save()
-        }
+    // ---------- Intentos online (persistente) ----------
+    private fun attemptsFile() = File(context.filesDir, "online_attempts.json")
+
+    private fun saveAttempts() {
+        try {
+            val o = JSONObject()
+            attempts.forEach { (k, v) -> o.put(k.toString(), v) }
+            attemptsFile().writeText(o.toString())
+        } catch (_: Exception) {}
+    }
+
+    private fun loadAttempts() {
+        try {
+            val f = attemptsFile()
+            if (!f.exists()) return
+            val o = JSONObject(f.readText())
+            o.keys().forEach { k -> attempts[k.toInt()] = o.optInt(k, 0) }
+        } catch (_: Exception) {}
     }
 
     // ---------- Almacenamiento local (JSON) ----------
