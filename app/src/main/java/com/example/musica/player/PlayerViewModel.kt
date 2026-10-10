@@ -23,12 +23,12 @@ import com.example.musica.telegram.TelegramClient
 import com.example.musica.telegram.TelegramConfig
 import com.google.android.gms.cast.MediaInfo
 import com.google.android.gms.cast.MediaLoadRequestData
+import com.google.android.gms.cast.MediaQueueData
 import com.google.android.gms.cast.MediaQueueItem
 import com.google.android.gms.cast.MediaStatus
 import com.google.android.gms.cast.framework.CastContext
 import com.google.android.gms.cast.framework.CastSession
 import com.google.android.gms.cast.framework.SessionManagerListener
-import com.google.android.gms.cast.framework.media.QueueData
 import com.google.android.gms.cast.framework.media.RemoteMediaClient
 import com.google.android.gms.cast.MediaMetadata as CastMediaMetadata
 import com.google.common.util.concurrent.ListenableFuture
@@ -73,6 +73,32 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     var repeatOne by mutableStateOf(false)
         private set
 
+    // ============================================================
+    // IMPORTANTE: los listeners se declaran ANTES del bloque init,
+    // porque init los utiliza. En Kotlin el orden de declaración
+    // define el orden de inicialización.
+    // ============================================================
+    private val sessionListener = object : SessionManagerListener<CastSession> {
+        override fun onSessionStarted(session: CastSession, sessionId: String) { onCastChanged(true) }
+        override fun onSessionResumed(session: CastSession, wasSuspended: Boolean) { onCastChanged(true) }
+        override fun onSessionEnded(session: CastSession, error: Int) { onCastChanged(false) }
+        override fun onSessionSuspended(session: CastSession, reason: Int) {}
+        override fun onSessionStarting(session: CastSession) {}
+        override fun onSessionStartFailed(session: CastSession, error: Int) {}
+        override fun onSessionEnding(session: CastSession) {}
+        override fun onSessionResuming(session: CastSession, sessionId: String) {}
+        override fun onSessionResumeFailed(session: CastSession, error: Int) {}
+    }
+
+    private val remoteListener = object : RemoteMediaClient.Listener {
+        override fun onStatusUpdated() { refreshProgress() }
+        override fun onMetadataUpdated() { refreshProgress() }
+        override fun onQueueStatusUpdated() { refreshProgress() }
+        override fun onPreloadStatusUpdated() {}
+        override fun onSendingRemoteMediaRequest() {}
+        override fun onAdBreakStatusUpdated() {}
+    }
+
     init {
         val token = SessionToken(app, ComponentName(app, PlaybackService::class.java))
         controllerFuture = MediaController.Builder(app, token).buildAsync()
@@ -103,29 +129,6 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // ---------- Sesión Cast ----------
-    private val sessionListener = object : SessionManagerListener<CastSession> {
-        override fun onSessionStarted(session: CastSession, sessionId: String) { onCastChanged(true) }
-        override fun onSessionResumed(session: CastSession, wasSuspended: Boolean) { onCastChanged(true) }
-        override fun onSessionEnded(session: CastSession, error: Int) { onCastChanged(false) }
-        override fun onSessionSuspended(session: CastSession, reason: Int) {}
-        override fun onSessionSuspending(session: CastSession) {}
-        override fun onSessionStarting(session: CastSession) {}
-        override fun onSessionStartFailed(session: CastSession, error: Int) {}
-        override fun onSessionEnding(session: CastSession) {}
-        override fun onSessionResuming(session: CastSession, sessionId: String) {}
-        override fun onSessionResumeFailed(session: CastSession, error: Int) {}
-    }
-
-    private val remoteListener = object : RemoteMediaClient.Listener {
-        override fun onStatusUpdated() { refreshProgress() }
-        override fun onMetadataUpdated() { refreshProgress() }
-        override fun onQueueStatusUpdated() { refreshProgress() }
-        override fun onPreloadStatusUpdated() {}
-        override fun onSendingRemoteMediaRequest() {}
-        override fun onAdBreakStatusUpdated() {}
-    }
-
     private fun onCastChanged(active: Boolean) {
         casting = active
         if (active) {
@@ -154,8 +157,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                     items.add(MediaQueueItem.Builder(buildCastMediaInfo(s)).build())
                 }
                 val startIdx = start.coerceAtMost(items.size - 1)
-                val queueData = QueueData.Builder()
-                    .setItems(items.toTypedArray())
+                val queueData = MediaQueueData.Builder()
+                    .setItems(items)
                     .setStartIndex(startIdx)
                     .setRepeatMode(MediaStatus.REPEAT_MODE_REPEAT_OFF)
                     .build()
@@ -329,8 +332,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleRepeat() {
         repeatOne = !repeatOne
         if (casting) {
+            // En el SDK de Cast, repetir una pista es REPEAT_MODE_REPEAT_SINGLE
             remoteClient?.queueSetRepeatMode(
-                if (repeatOne) MediaStatus.REPEAT_MODE_REPEAT_ONE
+                if (repeatOne) MediaStatus.REPEAT_MODE_REPEAT_SINGLE
                 else MediaStatus.REPEAT_MODE_REPEAT_OFF,
                 null
             )
