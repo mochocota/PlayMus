@@ -8,13 +8,16 @@ import androidx.compose.material.icons.filled.BeachAccess
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Celebration
 import androidx.compose.material.icons.filled.Church
+import androidx.compose.material.icons.filled.DiscFull
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FitnessCenter
+import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.Lyrics
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MilitaryTech
@@ -30,11 +33,8 @@ import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Waves
-import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.material.icons.filled.WbSunny
-import androidx.compose.material.icons.filled.LocalFireDepartment
-import androidx.compose.material.icons.filled.DiscFull
-import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -225,7 +225,7 @@ fun genreIcon(genre: String): ImageVector = when (genre.lowercase()) {
     "grupera" -> Icons.Filled.Piano
     "cumbia" -> Icons.Filled.Celebration
     "banda" -> Icons.Filled.MilitaryTech
-    "vallenato" -> Icons.Filled.QueueMusic
+    "vallenato" -> Icons.AutoMirrored.Filled.QueueMusic
     "norteño", "norteno" -> Icons.Filled.MusicNote
     "ranchera" -> Icons.Filled.Audiotrack
     "corridos" -> Icons.Filled.MusicVideo
