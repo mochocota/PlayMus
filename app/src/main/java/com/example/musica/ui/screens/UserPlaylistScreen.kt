@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -27,6 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
+import com.example.musica.data.FavoritesRepository
 import com.example.musica.data.MusicRepository
 import com.example.musica.data.PlaylistRepository
 import com.example.musica.data.Song
@@ -40,34 +42,48 @@ import com.example.musica.ui.theme.Pink
 import com.example.musica.ui.theme.Purple
 import com.example.musica.ui.theme.TextSecondary
 
+// playlistId = "favoritos" → lista especial de corazones; otro id → lista del usuario
 @Composable
 fun UserPlaylistScreen(nav: NavHostController, vm: PlayerViewModel, playlistId: String) {
+    val isFavorites = playlistId == "favoritos"
+
     val allSongs by MusicRepository.songs.collectAsState()
+    val favIds by FavoritesRepository.ids.collectAsState()
     val lists by PlaylistRepository.playlists.collectAsState()
-    val pl = lists.firstOrNull { it.id == playlistId }
+
     var songToRemove by remember { mutableStateOf<Song?>(null) }
 
-    if (pl == null) {
-        // La lista fue borrada: volver atrás
-        LaunchedEffect(Unit) { nav.popBackStack() }
-        Box(Modifier.fillMaxSize().background(NavyBg))
-        return
+    val pl = lists.firstOrNull { it.id == playlistId }
+
+    // Si es una lista del usuario y fue borrada: volver atrás
+    LaunchedEffect(pl?.id) {
+        if (!isFavorites && lists.isNotEmpty() && pl == null) nav.popBackStack()
     }
 
-    val songs = PlaylistRepository.songsIn(playlistId, allSongs)
+    val songs: List<Song> = if (isFavorites) {
+        favIds.mapNotNull { id -> allSongs.firstOrNull { it.id == id } }
+    } else {
+        PlaylistRepository.songsIn(playlistId, allSongs)
+    }
+
+    val title = if (isFavorites) "Favoritos" else (pl?.name ?: "Lista")
 
     Column(Modifier.fillMaxSize().background(NavyBg)) {
         Column(Modifier.weight(1f).padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Color.White,
                     modifier = Modifier.clickable { nav.popBackStack() })
-                Text("  ${pl.name}", color = Color.White, fontSize = 20.sp,
+                Text("  $title", color = Color.White, fontSize = 20.sp,
                     fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1)
-                IconButton(onClick = {
-                    PlaylistRepository.delete(pl.id)
-                    nav.popBackStack()
-                }) {
-                    Icon(Icons.Filled.Delete, "Borrar lista", tint = Pink)
+                if (isFavorites) {
+                    Icon(Icons.Filled.Favorite, null, tint = Pink)
+                } else {
+                    IconButton(onClick = {
+                        PlaylistRepository.delete(playlistId)
+                        nav.popBackStack()
+                    }) {
+                        Icon(Icons.Filled.Delete, "Borrar lista", tint = Pink)
+                    }
                 }
             }
             Text("${songs.size} canciones", color = TextSecondary, fontSize = 13.sp,
@@ -76,7 +92,10 @@ fun UserPlaylistScreen(nav: NavHostController, vm: PlayerViewModel, playlistId: 
 
             if (songs.isEmpty()) {
                 Text(
-                    "Esta lista está vacía.\n\nAñade canciones con el botón + que aparece en cada canción (en Géneros o en Búsqueda).",
+                    if (isFavorites)
+                        "Aún no tienes favoritos.\n\nToca el corazón 💗 en el reproductor para guardar tus canciones preferidas aquí."
+                    else
+                        "Esta lista está vacía.\n\nAñade canciones con el botón + que aparece en cada canción.",
                     color = TextSecondary, fontSize = 14.sp
                 )
             } else {
@@ -95,7 +114,7 @@ fun UserPlaylistScreen(nav: NavHostController, vm: PlayerViewModel, playlistId: 
                                 Text(s.artist, color = TextSecondary, fontSize = 12.sp, maxLines = 1)
                             }
                             IconButton(onClick = { songToRemove = s }) {
-                                Icon(Icons.Filled.Close, "Quitar de la lista", tint = TextSecondary)
+                                Icon(Icons.Filled.Close, "Quitar", tint = TextSecondary)
                             }
                             Text(fmtSeconds(s.durationSec), color = TextSecondary, fontSize = 12.sp)
                         }
@@ -111,14 +130,19 @@ fun UserPlaylistScreen(nav: NavHostController, vm: PlayerViewModel, playlistId: 
         AlertDialog(
             onDismissRequest = { songToRemove = null },
             containerColor = CardDark,
-            title = { Text("Quitar de la lista", color = Color.White, fontWeight = FontWeight.Bold) },
+            title = { Text(
+                if (isFavorites) "Quitar de favoritos" else "Quitar de la lista",
+                color = Color.White, fontWeight = FontWeight.Bold) },
             text = {
-                Text("¿Quitar «${s.title}» de «${pl.name}»?",
+                Text(
+                    if (isFavorites) "¿Quitar «${s.title}» de tus favoritos?"
+                    else "¿Quitar «${s.title}» de «$title»?",
                     color = TextSecondary, fontSize = 14.sp)
             },
             confirmButton = {
                 TextButton(onClick = {
-                    PlaylistRepository.removeSong(playlistId, s.id)
+                    if (isFavorites) FavoritesRepository.remove(s.id)
+                    else PlaylistRepository.removeSong(playlistId, s.id)
                     songToRemove = null
                 }) { Text("Quitar", color = Pink) }
             },
