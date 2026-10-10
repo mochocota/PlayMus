@@ -32,6 +32,7 @@ import com.example.musica.data.forYou
 import com.example.musica.data.recentHome
 import com.example.musica.player.PlayerViewModel
 import com.example.musica.ui.components.AlbumArt
+import com.example.musica.ui.components.CoverImage
 import com.example.musica.ui.components.SectionHeader
 import com.example.musica.ui.theme.CardLighter
 import com.example.musica.ui.theme.Cyan
@@ -43,7 +44,6 @@ import com.example.musica.ui.theme.TextSecondary
 fun HomeScreen(nav: NavHostController, vm: PlayerViewModel) {
     val songs by MusicRepository.songs.collectAsState()
     val library = songs.ifEmpty { ff6Songs }
-    val recent = if (songs.isNotEmpty()) songs.take(3).map { it.title to it.artist } else recentHome
 
     Column(Modifier.fillMaxSize().background(NavyBg)
         .verticalScroll(rememberScrollState()).padding(16.dp)) {
@@ -84,14 +84,31 @@ fun HomeScreen(nav: NavHostController, vm: PlayerViewModel) {
         Spacer(Modifier.height(22.dp))
         SectionHeader("Escuchado recientemente", "Ver todo")
         Spacer(Modifier.height(12.dp))
-        Row(Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            recent.forEach { (name, kind) ->
-                Column(Modifier.width(110.dp)) {
-                    AlbumArt(Modifier.size(110.dp))
-                    Spacer(Modifier.height(8.dp))
-                    Text(name, color = Color.White, fontSize = 13.sp, maxLines = 1)
-                    Text(kind, color = TextSecondary, fontSize = 11.sp)
+        if (songs.isNotEmpty()) {
+            Row(Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                songs.take(6).forEach { s ->
+                    Column(Modifier.width(110.dp).clickable {
+                        vm.play(s, songs)
+                        nav.navigate("player")
+                    }) {
+                        CoverImage(s, Modifier.size(110.dp), corner = 14.dp)
+                        Spacer(Modifier.height(8.dp))
+                        Text(s.title, color = Color.White, fontSize = 13.sp, maxLines = 1)
+                        Text(s.artist, color = TextSecondary, fontSize = 11.sp, maxLines = 1)
+                    }
+                }
+            }
+        } else {
+            Row(Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                recentHome.forEach { (name, kind) ->
+                    Column(Modifier.width(110.dp)) {
+                        AlbumArt(Modifier.size(110.dp))
+                        Spacer(Modifier.height(8.dp))
+                        Text(name, color = Color.White, fontSize = 13.sp, maxLines = 1)
+                        Text(kind, color = TextSecondary, fontSize = 11.sp)
+                    }
                 }
             }
         }
