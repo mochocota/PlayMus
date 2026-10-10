@@ -1,5 +1,6 @@
 package com.example.musica
 
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -16,9 +17,11 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -27,18 +30,23 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.example.musica.data.MusicRepository
 import com.example.musica.player.PlayerViewModel
+import com.example.musica.telegram.TelegramConfig
 import com.example.musica.ui.components.MiniPlayer
 import com.example.musica.ui.screens.ArtistsScreen
 import com.example.musica.ui.screens.DetailScreen
 import com.example.musica.ui.screens.ExploreScreen
+import com.example.musica.ui.screens.GenresScreen
 import com.example.musica.ui.screens.HomeScreen
 import com.example.musica.ui.screens.LibraryScreen
 import com.example.musica.ui.screens.NowPlayingScreen
 import com.example.musica.ui.screens.PlaylistsScreen
 import com.example.musica.ui.screens.QueueScreen
 import com.example.musica.ui.screens.SettingsScreen
+import com.example.musica.ui.screens.SongListScreen
 import com.example.musica.ui.screens.SplashScreen
+import com.example.musica.ui.screens.TelegramSetupScreen
 import com.example.musica.ui.theme.BottomBarBg
 import com.example.musica.ui.theme.MusicaTheme
 import com.example.musica.ui.theme.NavyBg
@@ -48,6 +56,7 @@ import com.example.musica.ui.theme.TextSecondary
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        MusicRepository.init(applicationContext)
         setContent {
             MusicaTheme {
                 AppRoot()
@@ -61,6 +70,14 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
     val nav = rememberNavController()
     val route = nav.currentBackStackEntryAsState().value?.destination?.route
     val tabs = listOf("home", "explore", "library")
+    val context = LocalContext.current
+
+    // Sincronización automática al abrir (si hay bot configurado y biblioteca vacía)
+    LaunchedEffect(Unit) {
+        if (TelegramConfig.token(context).isNotBlank() && MusicRepository.songs.value.isEmpty()) {
+            try { MusicRepository.sync() } catch (_: Exception) {}
+        }
+    }
 
     Scaffold(
         containerColor = NavyBg,
@@ -86,6 +103,11 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
             }
             composable("artists") { ArtistsScreen(nav) }
             composable("settings") { SettingsScreen(nav) }
+            composable("genres") { GenresScreen(nav) }
+            composable("genre/{name}") { b ->
+                SongListScreen(nav, vm, Uri.decode(b.arguments?.getString("name").orEmpty()))
+            }
+            composable("telegram") { TelegramSetupScreen(nav) }
         }
     }
 }
