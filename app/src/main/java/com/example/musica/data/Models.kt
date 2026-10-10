@@ -54,7 +54,9 @@ data class Song(
     val fromTelegram: Boolean = false,
     val scanned: Boolean = false,
     val coverPath: String = "",
-    val metaDone: Boolean = false
+    val metaDone: Boolean = false,
+    val caption: String = "",
+    val fileName: String = ""
 )
 
 data class PlaylistItem(val id: String, val name: String, val count: Int,
@@ -144,7 +146,6 @@ fun songsFor(playlistId: String): List<Song> = when (playlistId) {
 
 // ============================================================
 // CATEGORÍAS: mapa de palabras clave → género en español
-// (se usa con hashtags del caption y con la etiqueta ID3)
 // ============================================================
 val genreMap: List<Pair<String, String>> = listOf(
     "pop" to "Pop",
