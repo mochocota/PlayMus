@@ -1,5 +1,6 @@
 package com.example.musica.ui.screens
 
+import android.view.ContextThemeWrapper
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -69,9 +70,9 @@ import com.example.musica.ui.theme.Pink
 import com.example.musica.ui.theme.Purple
 import com.example.musica.ui.theme.TextSecondary
 import com.example.musica.ui.theme.TrackColor
+import androidx.mediarouter.app.MediaRouteButton
 import com.google.android.gms.cast.framework.CastButtonFactory
 import com.google.android.gms.cast.framework.CastContext
-import androidx.mediarouter.app.MediaRouteButton
 import kotlinx.coroutines.delay
 
 @Composable
@@ -95,7 +96,6 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
     val context = LocalContext.current
 
     // ¿Está disponible Google Cast en este dispositivo?
-    // Si no hay Play Services (algunos Xiaomi/Huawei) esto es false
     val castUsable = remember {
         try {
             CastContext.getSharedInstance(context)
@@ -178,7 +178,7 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                         }
                         Spacer(Modifier.height(8.dp))
 
-                        // Slider blindado: evita valores inválidos (NaN) que tumban la app
+                        // Slider blindado contra valores inválidos
                         val rawProgress = if (dragging) dragValue
                         else if (vm.duration > 0) vm.position.toFloat() / vm.duration else 0f
                         val progress = if (rawProgress.isNaN() || rawProgress < 0f) 0f
@@ -233,18 +233,24 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically) {
 
-                            // ---------- Botón de Cast (blindado) ----------
+                            // ---------- Botón de Cast ----------
+                            // La vista nativa MediaRouteButton necesita un tema
+                            // AppCompat para dibujar su ícono; se la creamos con uno.
                             if (castUsable) {
                                 Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
                                     AndroidView(
                                         modifier = Modifier.fillMaxSize(),
                                         factory = { ctx ->
                                             try {
-                                                MediaRouteButton(ctx).apply {
+                                                val themed = ContextThemeWrapper(
+                                                    ctx,
+                                                    androidx.appcompat.R.style.Theme_AppCompat_NoActionBar
+                                                )
+                                                MediaRouteButton(themed).apply {
                                                     CastButtonFactory.setUpMediaRouteButton(ctx, this)
+                                                    visibility = android.view.View.VISIBLE
                                                 }
                                             } catch (_: Exception) {
-                                                // Si algo falla al crear el botón, un View vacío
                                                 android.view.View(ctx)
                                             }
                                         }
@@ -256,7 +262,7 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                                         "Cast no disponible en este dispositivo",
                                         Toast.LENGTH_SHORT).show()
                                 }) {
-                                    Icon(Icons.Filled.Cast, null, tint = TextSecondary)
+                                    Icon(Icons.Filled.Cast, "Cast", tint = Color.White)
                                 }
                             }
 
