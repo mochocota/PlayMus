@@ -17,7 +17,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
-import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -46,6 +45,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.navigation.NavHostController
 import com.example.musica.data.FavoritesRepository
 import com.example.musica.data.LyricLine
@@ -66,6 +66,8 @@ import com.example.musica.ui.theme.Pink
 import com.example.musica.ui.theme.Purple
 import com.example.musica.ui.theme.TextSecondary
 import com.example.musica.ui.theme.TrackColor
+import com.google.android.gms.cast.framework.CastButtonFactory
+import com.google.android.gms.cast.framework.widgets.MediaRouteButton
 import kotlinx.coroutines.delay
 
 @Composable
@@ -79,7 +81,6 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
     var dragValue by remember { mutableStateOf(0f) }
     var songToAdd by remember { mutableStateOf<Song?>(null) }
 
-    // ---------- Estado de la letra ----------
     var showLyrics by remember { mutableStateOf(false) }
     var lyrics by remember { mutableStateOf<LyricsResult?>(null) }
     var lyricsLoading by remember { mutableStateOf(false) }
@@ -94,7 +95,6 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
         }
     }
 
-    // Carga la letra al abrir el modo letra (o al cambiar de canción con la letra abierta)
     LaunchedEffect(showLyrics, song?.id, retry) {
         val s = song ?: return@LaunchedEffect
         if (showLyrics && loadedFor != s.id) {
@@ -111,7 +111,6 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
     Box(Modifier.fillMaxSize().background(NavyBg)) {
 
         if (showLyrics && song != null) {
-            // ================= MODO LETRA =================
             LyricsView(
                 vm = vm, song = song,
                 lyrics = lyrics, loading = lyricsLoading, failed = lyricsFail,
@@ -119,7 +118,6 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                 onRetry = { loadedFor = null; retry++ }
             )
         } else {
-            // ================= VISTA NORMAL =================
             Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
 
                 Spacer(Modifier.height(10.dp))
@@ -154,13 +152,8 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                             }
                             IconButton(onClick = {
                                 val nowFav = FavoritesRepository.toggle(song.id)
-                                if (nowFav) {
-                                    favMsg = "Agregado a favoritos"
-                                    showFavAnim = true
-                                } else {
-                                    favMsg = "Eliminado de favoritos"
-                                    showFavAnim = true
-                                }
+                                favMsg = if (nowFav) "Agregado a favoritos" else "Eliminado de favoritos"
+                                showFavAnim = true
                             }) {
                                 Icon(if (liked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
                                     null, tint = if (liked) Pink else Color.White)
@@ -219,9 +212,19 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = {}) {
-                                Icon(Icons.Filled.Cast, null, tint = TextSecondary)
+
+                            // ---------- Botón oficial de Google Cast ----------
+                            Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                                AndroidView(
+                                    modifier = Modifier.fillMaxSize(),
+                                    factory = { ctx ->
+                                        MediaRouteButton(ctx).apply {
+                                            CastButtonFactory.setUpMediaRouteButton(ctx, this)
+                                        }
+                                    }
+                                )
                             }
+
                             IconButton(onClick = { showLyrics = true }) {
                                 Icon(Icons.Filled.Lyrics, "Ver letra",
                                     tint = Color.White, modifier = Modifier.size(28.dp))
@@ -383,7 +386,6 @@ private fun LyricsView(
     }
 }
 
-// Letra sincronizada
 @Composable
 private fun SyncedLyrics(lines: List<LyricLine>, vm: PlayerViewModel) {
     val listState = rememberLazyListState()
