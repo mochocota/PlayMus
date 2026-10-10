@@ -11,6 +11,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -330,9 +332,8 @@ private fun LyricsView(
                         SyncedLyrics(synced, vm)
                     } else if (plain != null) {
                         Column(
-                            Modifier.fillMaxSize().verticalScroll(
-                                androidx.compose.foundation.rememberScrollState()
-                            ).padding(vertical = 20.dp)
+                            Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                                .padding(vertical = 20.dp)
                         ) {
                             Text(plain, color = Color.White, fontSize = 16.sp,
                                 lineHeight = 26.sp, textAlign = TextAlign.Center,
