@@ -4,7 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -39,11 +40,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import com.example.musica.data.MusicRepository
-import com.example.musica.data.Song
 import com.example.musica.player.PlayerViewModel
-import com.example.musica.ui.components.AddToPlaylistDialog
+import com.example.musica.ui.components.CoverImage
 import com.example.musica.ui.components.MiniPlayer
-import com.example.musica.ui.components.SongRow
 import com.example.musica.ui.theme.CardLighter
 import com.example.musica.ui.theme.NavyBg
 import com.example.musica.ui.theme.Purple
@@ -58,7 +57,6 @@ private fun norm(s: String): String =
 fun SearchScreen(nav: NavHostController, vm: PlayerViewModel) {
     val songs by MusicRepository.songs.collectAsState()
     var query by rememberSaveable { mutableStateOf("") }
-    var songToAdd by remember { mutableStateOf<Song?>(null) }
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
 
@@ -131,22 +129,33 @@ fun SearchScreen(nav: NavHostController, vm: PlayerViewModel) {
                 }
                 Spacer(Modifier.height(16.dp))
 
-                // Resultados en vivo
+                // Resultados en vivo (cuadrícula de 3 columnas)
                 val results = songs.filter {
                     norm(it.title).contains(nq) || norm(it.artist).contains(nq) ||
                             norm(it.album).contains(nq) || norm(it.genre).contains(nq)
                 }
                 Text("Resultados (${results.size})",
                     color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(10.dp))
                 if (results.isEmpty()) {
                     Text("Sin resultados para «$query»", color = TextSecondary, fontSize = 13.sp)
                 } else {
-                    LazyColumn(Modifier.weight(1f)) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(3),
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
                         items(results.size) { i ->
                             val s = results[i]
-                            SongRow(song = s, list = results, vm = vm,
-                                onAdd = { songToAdd = s })
+                            Column(Modifier.clickable { vm.play(s, results) }) {
+                                CoverImage(s, Modifier.fillMaxWidth().aspectRatio(1f), corner = 12.dp)
+                                Spacer(Modifier.height(6.dp))
+                                Text(s.title, color = Color.White, fontSize = 12.sp,
+                                    maxLines = 1, lineHeight = 14.sp)
+                                Text(s.artist, color = TextSecondary, fontSize = 10.sp,
+                                    maxLines = 1, lineHeight = 12.sp)
+                            }
                         }
                     }
                 }
@@ -154,6 +163,4 @@ fun SearchScreen(nav: NavHostController, vm: PlayerViewModel) {
         }
         if (vm.current != null) MiniPlayer(vm) { nav.navigate("player") }
     }
-
-    AddToPlaylistDialog(songToAdd) { songToAdd = null }
 }
