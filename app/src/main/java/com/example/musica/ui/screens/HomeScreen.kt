@@ -51,7 +51,8 @@ fun HomeScreen(nav: NavHostController, vm: PlayerViewModel) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Inicio", color = Color.White, fontSize = 22.sp,
                 fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            Icon(Icons.Filled.Search, null, tint = Color.White)
+            Icon(Icons.Filled.Search, null, tint = Color.White,
+                modifier = Modifier.clickable { nav.navigate("search") })
             Spacer(Modifier.width(12.dp))
             Box(Modifier.size(34.dp).clip(CircleShape).background(CardLighter),
                 contentAlignment = Alignment.Center) {
