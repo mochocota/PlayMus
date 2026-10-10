@@ -8,6 +8,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.ChevronRight
@@ -17,6 +18,7 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -36,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import com.example.musica.telegram.TelegramConfig
+import com.example.musica.ui.theme.Cyan
 import com.example.musica.ui.theme.NavyBg
 import com.example.musica.ui.theme.Purple
 import com.example.musica.ui.theme.TextSecondary
@@ -48,9 +51,11 @@ fun SettingRow(icon: ImageVector, label: String, value: String? = null,
         .clickable(enabled = onClick != null) { onClick?.invoke() }
         .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically) {
-        Icon(icon, null, tint = TextSecondary, modifier = Modifier.size(22.dp))
+        Icon(icon, null, tint = if (onClick != null) TextSecondary else TextSecondary.copy(alpha = 0.6f),
+            modifier = Modifier.size(22.dp))
         Spacer(Modifier.width(14.dp))
-        Text(label, color = Color.White, modifier = Modifier.weight(1f))
+        Text(label, color = if (onClick != null) Color.White else Color.White.copy(alpha = 0.7f),
+            modifier = Modifier.weight(1f))
         if (value != null) Text(value, color = TextSecondary, fontSize = 13.sp)
         trailing()
     }
@@ -75,9 +80,18 @@ fun SettingsScreen(nav: NavHostController) {
         // ---------- Biblioteca ----------
         Text("Biblioteca", color = TextSecondary, fontSize = 13.sp)
         Spacer(Modifier.height(6.dp))
+
+        // Canal conectado: DESHABILITADO (solo informativo)
         SettingRow(
             Icons.Filled.Cloud, "Canal de Telegram",
-            if (tgConnected) "Conectado" else "Configurar",
+            if (tgConnected) "Conectado" else "Sin configurar"
+        ) {
+            Icon(Icons.Filled.CheckCircle, null, tint = Cyan)
+        }
+
+        // Nuevo token: para guardar otro bot (con prueba de conexión)
+        SettingRow(
+            Icons.Filled.VpnKey, "Nuevo token", null,
             onClick = { nav.navigate("telegram") }
         ) {
             Icon(Icons.Filled.ChevronRight, null, tint = TextSecondary)
