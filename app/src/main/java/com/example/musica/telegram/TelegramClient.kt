@@ -10,9 +10,31 @@ import java.net.URL
 object TelegramConfig {
     private const val PREFS = "telegram_prefs"
 
+    // ============================================================
+    // 👇👇 PEGA AQUÍ TU TOKEN DEL BOT (entre las comillas) 👇👇
+    //
+    // Ejemplo:
+    // const val DEFAULT_BOT_TOKEN = "7123456789:AAHxxxxxxxxxxxxxxxxx"
+    //
+    // Así la app ya viene configurada al instalarla y compartirse.
+    // Si dejas "", la app pedirá el token en Configuración (como antes).
+    //
+    // ⚠️ Nota de seguridad: quien tenga el APK podría extraer el
+    // token. Mantén el bot como administrador SOLO de tu canal
+    // privado. Puedes revocar el token cuando quieras con
+    // @BotFather → /mybots → API Token → Revoke.
+    // ============================================================
+    const val DEFAULT_BOT_TOKEN = "8942499566:AAHmsT8d9M5BDIk7JLGGm6Y0nHuhVNjkGHU"
+
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    fun token(ctx: Context): String = prefs(ctx).getString("token", "") ?: ""
+    // Devuelve el token guardado en el teléfono; si no hay,
+    // usa el integrado en el código (DEFAULT_BOT_TOKEN).
+    fun token(ctx: Context): String {
+        val saved = prefs(ctx).getString("token", "") ?: ""
+        return saved.ifBlank { DEFAULT_BOT_TOKEN.trim() }
+    }
+
     fun channel(ctx: Context): String = prefs(ctx).getString("channel", "") ?: ""
     fun offset(ctx: Context): Long = prefs(ctx).getLong("offset", 0L)
 
