@@ -15,6 +15,7 @@ import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.example.musica.data.DEMO_URL
+import com.example.musica.data.PlayStatsRepository
 import com.example.musica.data.Song
 import com.example.musica.telegram.TelegramClient
 import com.example.musica.telegram.TelegramConfig
@@ -72,7 +73,16 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             }
 
             override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
-                current = currentList.getOrNull(player.currentMediaItemIndex)
+                val next = currentList.getOrNull(player.currentMediaItemIndex)
+                current = next
+                // Cuenta como reproducción: paso automático (terminó la canción)
+                // o siguiente/anterior manual del usuario
+                if (next != null &&
+                    (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||
+                            reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK)
+                ) {
+                    PlayStatsRepository.increment(next.id)
+                }
             }
 
             override fun onPlayerError(error: PlaybackException) {
@@ -90,6 +100,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     fun play(song: Song, list: List<Song>) {
         currentList = list
         current = song
+        // Cuenta la reproducción de la canción elegida
+        PlayStatsRepository.increment(song.id)
         val items = list.map { s ->
             val uri = if (s.fromTelegram && s.fileId.isNotEmpty())
                 "https://tg.file/${s.fileId}"
