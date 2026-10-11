@@ -36,6 +36,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.example.musica.data.DownloadRepository
 import com.example.musica.data.FavoritesRepository
 import com.example.musica.data.MusicRepository
 import com.example.musica.data.PlayStatsRepository
@@ -47,6 +48,7 @@ import com.example.musica.ui.screens.AlbumSongsScreen
 import com.example.musica.ui.screens.AlbumsScreen
 import com.example.musica.ui.screens.ArtistsScreen
 import com.example.musica.ui.screens.DetailScreen
+import com.example.musica.ui.screens.DownloadsScreen
 import com.example.musica.ui.screens.ExploreScreen
 import com.example.musica.ui.screens.GenresScreen
 import com.example.musica.ui.screens.HomeScreen
@@ -75,6 +77,7 @@ class MainActivity : AppCompatActivity() {
         PlaylistRepository.init(applicationContext)
         PlayStatsRepository.init(applicationContext)
         FavoritesRepository.init(applicationContext)
+        DownloadRepository.init(applicationContext)
         setContent {
             MusicaTheme {
                 AppRoot()
@@ -162,6 +165,7 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
             composable("userplaylist/{id}") { b ->
                 UserPlaylistScreen(nav, vm, b.arguments?.getString("id").orEmpty())
             }
+            composable("downloads") { DownloadsScreen(nav, vm) }
             composable("artists") { ArtistsScreen(nav) }
             composable("settings") { SettingsScreen(nav) }
             composable("genres") { GenresScreen(nav) }
