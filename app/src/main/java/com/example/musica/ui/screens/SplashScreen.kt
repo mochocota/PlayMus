@@ -24,10 +24,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import com.example.musica.R
-import com.example.musica.ui.theme.CardDark
 import com.example.musica.ui.theme.GradientBrush
 import com.example.musica.ui.theme.NavyBg
 import com.example.musica.ui.theme.TextSecondary
+
+private val LogoBg = Color(0xFF0A0F1E)
 
 @Composable
 fun SplashScreen(nav: NavHostController) {
@@ -48,15 +49,15 @@ fun SplashScreen(nav: NavHostController) {
         Text("Tu mundo,\nen una sola app", color = TextSecondary, textAlign = TextAlign.Center)
         Spacer(Modifier.height(36.dp))
 
-        // ---------- Logo de la app (gato neón) ----------
+        // ---------- Logo "Vinilo Neón" (vectorial, nítido siempre) ----------
         Box(
-            Modifier.size(230.dp).clip(CircleShape)
+            Modifier.size(240.dp).clip(CircleShape)
                 .border(3.dp, GradientBrush, CircleShape)
-                .background(Color.Black),
+                .background(LogoBg),
             contentAlignment = Alignment.Center
         ) {
             Image(
-                painter = painterResource(R.drawable.logo),
+                painter = painterResource(R.drawable.ic_logo_music),
                 contentDescription = "Logo de la app",
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
