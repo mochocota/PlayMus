@@ -10,7 +10,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
-import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -23,7 +22,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -35,7 +33,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
-import com.example.musica.data.DownloadRepository
 import com.example.musica.data.MusicRepository
 import com.example.musica.data.PlaylistRepository
 import com.example.musica.data.playlists
@@ -56,12 +53,8 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
     val ctx = LocalContext.current
     val songs by MusicRepository.songs.collectAsState()
     val userLists by PlaylistRepository.playlists.collectAsState()
-    val dlVersion by DownloadRepository.version.collectAsState()
     var syncing by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
-
-    // Número de descargas (se actualiza cuando cambia dlVersion)
-    val dlCount = remember(dlVersion) { DownloadRepository.downloadedCount() }
 
     fun doSync() {
         if (syncing) return
@@ -115,10 +108,9 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
             }
             Spacer(Modifier.height(4.dp))
 
-            // ---------- Accesos (Canciones, Descargas, Listas) ----------
+            // ---------- Accesos (Canciones, Listas) ----------
             val rows: List<Pair<Triple<androidx.compose.ui.graphics.vector.ImageVector, String, String>, String?>> = listOf(
                 Triple(Icons.Filled.MusicNote, "Canciones", "${songs.size}") to "genre/Todas",
-                Triple(Icons.Filled.Download, "Descargas", "$dlCount") to "downloads",
                 Triple(Icons.AutoMirrored.Filled.QueueMusic, "Listas de reproducción",
                     "${userLists.size + 1}") to "playlists"
             )
