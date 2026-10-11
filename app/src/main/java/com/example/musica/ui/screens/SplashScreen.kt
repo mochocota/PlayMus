@@ -44,7 +44,7 @@ fun SplashScreen(nav: NavHostController) {
             Icon(Icons.Filled.MusicNote, null, tint = Color.White, modifier = Modifier.size(46.dp))
         }
         Spacer(Modifier.height(18.dp))
-        Text("Música", color = Color.White, fontSize = 40.sp, fontWeight = FontWeight.Bold)
+        Text("Melodix", color = Color.White, fontSize = 40.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
         Text("Tu mundo,\nen una sola app", color = TextSecondary, textAlign = TextAlign.Center)
         Spacer(Modifier.height(36.dp))
