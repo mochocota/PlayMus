@@ -5,6 +5,7 @@ import android.content.Intent
 import android.media.AudioManager
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.Player
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.ExoPlayer
@@ -39,7 +40,15 @@ class PlaybackService : MediaSessionService() {
             .setMediaSourceFactory(
                 DefaultMediaSourceFactory(
                     ResolvingDataSource.Factory(
-                        DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true),
+                        // DefaultDataSource entiende TODOS los esquemas:
+                        // file:// (descargas offline), https:// (streaming),
+                        // content://, etc. Antes solo hablaba HTTP y por
+                        // eso los archivos locales fallaban.
+                        DefaultDataSource.Factory(
+                            this,
+                            DefaultHttpDataSource.Factory()
+                                .setAllowCrossProtocolRedirects(true)
+                        ),
                         ResolvingDataSource.Resolver { dataSpec ->
                             val uri = dataSpec.uri
                             if (uri.host == "tg.file") {
