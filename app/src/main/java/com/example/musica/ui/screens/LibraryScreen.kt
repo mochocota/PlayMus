@@ -10,7 +10,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
-import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -22,7 +21,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -54,6 +52,7 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
     val ctx = LocalContext.current
     val songs by MusicRepository.songs.collectAsState()
     val userLists by PlaylistRepository.playlists.collectAsState()
+    val ready by MusicRepository.ready.collectAsState()
     var syncing by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
 
@@ -109,43 +108,35 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
             }
             Spacer(Modifier.height(4.dp))
 
-            // ---------- Accesos (Canciones, Listas) ----------
-            val rows: List<Pair<Triple<androidx.compose.ui.graphics.vector.ImageVector, String, String>, String?>> = listOf(
-                Triple(Icons.Filled.MusicNote, "Canciones", "${songs.size}") to "genre/Todas",
-                Triple(Icons.AutoMirrored.Filled.QueueMusic, "Listas de reproducción",
-                    "${userLists.size + 1}") to "playlists"
-            )
-            rows.forEach { (t, route) ->
-                val (icon, label, count) = t
-                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(CardDark)
-                    .clickable(enabled = route != null) { route?.let { nav.navigate(it) } }
-                    .padding(10.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(42.dp).clip(RoundedCornerShape(10.dp)).background(CardLighter),
-                        contentAlignment = Alignment.Center) {
-                        Icon(icon, null, tint = Color.White)
-                    }
-                    Spacer(Modifier.width(14.dp))
-                    Text(label, color = Color.White, modifier = Modifier.weight(1f))
-                    Text(count, color = TextSecondary, fontSize = 13.sp)
+            // ---------- Acceso a las listas ----------
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(CardDark)
+                .clickable { nav.navigate("playlists") }
+                .padding(10.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(42.dp).clip(RoundedCornerShape(10.dp)).background(CardLighter),
+                    contentAlignment = Alignment.Center) {
+                    Icon(Icons.AutoMirrored.Filled.QueueMusic, null, tint = Color.White)
                 }
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.width(14.dp))
+                Text("Listas de reproducción", color = Color.White, modifier = Modifier.weight(1f))
+                Text("${userLists.size + 1}", color = TextSecondary, fontSize = 13.sp)
             }
 
             Spacer(Modifier.height(16.dp))
-            Text("Tus canciones (${songs.size})", color = Color.White,
-                fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(12.dp))
         }
 
         // ---------- Cuadrícula de canciones (3 columnas) ----------
         if (songs.isEmpty()) {
             Box(Modifier.weight(1f).fillMaxWidth().padding(16.dp),
                 contentAlignment = Alignment.Center) {
-                Text(
-                    "Tu biblioteca está vacía.\n\nSi el token está integrado en la app, la sincronización empieza sola; también puedes pulsar 🔄.",
-                    color = TextSecondary, fontSize = 14.sp
-                )
+                if (!ready) {
+                    CircularProgressIndicator(color = Purple)
+                } else {
+                    Text(
+                        "Tu biblioteca está vacía.\n\nSi el token está integrado en la app, la sincronización empieza sola; también puedes pulsar 🔄.",
+                        color = TextSecondary, fontSize = 14.sp
+                    )
+                }
             }
         } else {
             LazyVerticalGrid(
