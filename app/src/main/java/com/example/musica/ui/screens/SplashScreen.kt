@@ -1,5 +1,6 @@
 package com.example.musica.ui.screens
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,13 +16,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
-import com.example.musica.ui.theme.GradientBrush
+import com.example.musica.R
 import com.example.musica.ui.theme.CardDark
+import com.example.musica.ui.theme.GradientBrush
 import com.example.musica.ui.theme.NavyBg
 import com.example.musica.ui.theme.TextSecondary
 
@@ -43,14 +47,22 @@ fun SplashScreen(nav: NavHostController) {
         Spacer(Modifier.height(8.dp))
         Text("Tu mundo,\nen una sola app", color = TextSecondary, textAlign = TextAlign.Center)
         Spacer(Modifier.height(36.dp))
+
+        // ---------- Logo de la app (gato neón) ----------
         Box(
-            Modifier.size(220.dp).clip(CircleShape)
+            Modifier.size(230.dp).clip(CircleShape)
                 .border(3.dp, GradientBrush, CircleShape)
-                .background(CardDark),
+                .background(Color.Black),
             contentAlignment = Alignment.Center
         ) {
-            Text("🐱", fontSize = 100.sp)
+            Image(
+                painter = painterResource(R.drawable.logo),
+                contentDescription = "Logo de la app",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
         }
+
         Spacer(Modifier.weight(1f))
         Box(
             Modifier.fillMaxWidth().height(54.dp).clip(RoundedCornerShape(27.dp))
