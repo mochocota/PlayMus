@@ -1,6 +1,8 @@
 package com.example.musica.player
 
+import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -9,6 +11,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import com.example.musica.audio.EqualizerManager
 import com.example.musica.telegram.TelegramClient
 import com.example.musica.telegram.TelegramConfig
 
@@ -21,7 +24,16 @@ class PlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
 
-        val player = ExoPlayer.Builder(this)
+        EqualizerManager.init(this)
+
+        // Genera un ID de sesión de audio propio para poder
+        // enganchar el ecualizador al reproductor
+        val sessionId = try {
+            (getSystemService(Context.AUDIO_SERVICE) as AudioManager)
+                .generateAudioSessionId()
+        } catch (_: Exception) { 0 }
+
+        val builder = ExoPlayer.Builder(this)
             .setAudioAttributes(AudioAttributes.DEFAULT, true)
             .setHandleAudioBecomingNoisy(true) // pausa al desconectar audífonos
             .setMediaSourceFactory(
@@ -42,7 +54,11 @@ class PlaybackService : MediaSessionService() {
                     )
                 )
             )
-            .build()
+        if (sessionId > 0) builder.setAudioSessionId(sessionId)
+        val player = builder.build()
+
+        // Engancha el ecualizador (restaura tus ajustes guardados)
+        if (sessionId > 0) EqualizerManager.attach(sessionId)
 
         mediaSession = MediaSession.Builder(this, player).build()
     }
@@ -50,8 +66,6 @@ class PlaybackService : MediaSessionService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
         mediaSession
 
-    // Si el usuario cierra la app de la lista de recientes:
-    // sigue sonando si hay reproducción activa; si estaba pausada, se detiene.
     override fun onTaskRemoved(rootIntent: Intent?) {
         val player = mediaSession?.player
         if (player == null || !player.playWhenReady ||
@@ -62,6 +76,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        EqualizerManager.release()
         mediaSession?.run {
             player.release()
             release()
