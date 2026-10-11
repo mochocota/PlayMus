@@ -10,6 +10,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -33,12 +35,16 @@ import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.navigation.NavHostController
+import com.example.musica.audio.EqualizerManager
 import com.example.musica.data.FavoritesRepository
 import com.example.musica.data.LyricLine
 import com.example.musica.data.LyricsRepository
@@ -85,6 +92,7 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
     var dragging by remember { mutableStateOf(false) }
     var dragValue by remember { mutableStateOf(0f) }
     var songToAdd by remember { mutableStateOf<Song?>(null) }
+    var showEq by remember { mutableStateOf(false) }
 
     var showLyrics by remember { mutableStateOf(false) }
     var lyrics by remember { mutableStateOf<LyricsResult?>(null) }
@@ -95,7 +103,6 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
 
     val context = LocalContext.current
 
-    // ¿Está disponible Google Cast en este dispositivo?
     val castUsable = remember {
         try {
             CastContext.getSharedInstance(context)
@@ -178,7 +185,6 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                         }
                         Spacer(Modifier.height(8.dp))
 
-                        // Slider blindado contra valores inválidos
                         val rawProgress = if (dragging) dragValue
                         else if (vm.duration > 0) vm.position.toFloat() / vm.duration else 0f
                         val progress = if (rawProgress.isNaN() || rawProgress < 0f) 0f
@@ -234,8 +240,6 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                             verticalAlignment = Alignment.CenterVertically) {
 
                             // ---------- Botón de Cast ----------
-                            // La vista nativa MediaRouteButton necesita un tema
-                            // AppCompat para dibujar su ícono; se la creamos con uno.
                             if (castUsable) {
                                 Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
                                     AndroidView(
@@ -268,6 +272,11 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
 
                             IconButton(onClick = { showLyrics = true }) {
                                 Icon(Icons.Filled.Lyrics, "Ver letra",
+                                    tint = Color.White, modifier = Modifier.size(28.dp))
+                            }
+                            // ---------- Botón del ecualizador ----------
+                            IconButton(onClick = { showEq = true }) {
+                                Icon(Icons.Filled.Equalizer, "Ecualizador",
                                     tint = Color.White, modifier = Modifier.size(28.dp))
                             }
                             IconButton(onClick = { songToAdd = song }) {
@@ -318,6 +327,147 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
     }
 
     AddToPlaylistDialog(songToAdd) { songToAdd = null }
+
+    // ---------- Ecualizador ----------
+    if (showEq) EqualizerDialog(onDismiss = { showEq = false })
+}
+
+// ============================================================
+// Diálogo del ecualizador
+// ============================================================
+@Composable
+private fun EqualizerDialog(onDismiss: () -> Unit) {
+    val available = EqualizerManager.available
+    val bandCount = if (available) EqualizerManager.bandCount().coerceAtLeast(1) else 5
+    val range = EqualizerManager.bandRange()
+
+    var enabled by remember { mutableStateOf(EqualizerManager.isEnabled()) }
+    var preset by remember { mutableStateOf(EqualizerManager.currentPreset()) }
+    var levels by remember {
+        mutableStateOf((0 until bandCount).map { EqualizerManager.bandLevel(it) })
+    }
+    var bass by remember { mutableStateOf(EqualizerManager.bassStrength()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = CardDark,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Ecualizador", color = Color.White,
+                    fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = { enabled = it; EqualizerManager.setEnabled(it) },
+                    colors = SwitchDefaults.colors(checkedTrackColor = Purple)
+                )
+            }
+        },
+        text = {
+            if (!available) {
+                Text(
+                    "El ecualizador no está disponible en este dispositivo (o aún no hay sesión de audio activa).\n\nReproduce una canción y abre el ecualizador de nuevo.",
+                    color = TextSecondary, fontSize = 13.sp, lineHeight = 18.sp
+                )
+            } else {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+
+                    // ---------- Presets ----------
+                    Text("Presets", color = TextSecondary, fontSize = 12.sp)
+                    Spacer(Modifier.height(6.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.horizontalScroll(rememberScrollState())
+                    ) {
+                        (0 until EqualizerManager.presetCount()).forEach { i ->
+                            val selected = preset == i
+                            Box(
+                                Modifier
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(if (selected) Purple else CardLighter)
+                                    .clickable {
+                                        EqualizerManager.usePreset(i)
+                                        preset = i
+                                        levels = (0 until bandCount)
+                                            .map { EqualizerManager.bandLevel(it) }
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Text(EqualizerManager.presetName(i),
+                                    color = Color.White, fontSize = 11.sp, maxLines = 1)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+
+                    // ---------- Bandas ----------
+                    levels.forEachIndexed { i, lvl ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(formatFreq(EqualizerManager.bandFreq(i)),
+                                color = TextSecondary, fontSize = 11.sp,
+                                modifier = Modifier.width(52.dp))
+                            Slider(
+                                value = lvl.toFloat(),
+                                onValueChange = { v ->
+                                    val nv = v.toInt()
+                                    levels = levels.toMutableList().also { l -> l[i] = nv }
+                                    preset = -1
+                                    EqualizerManager.setBandLevel(i, nv)
+                                },
+                                valueRange = range[0].toFloat()..range[1].toFloat(),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = Color.White,
+                                    activeTrackColor = Purple,
+                                    inactiveTrackColor = TrackColor
+                                ),
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(dbLabel(lvl), color = TextSecondary, fontSize = 11.sp,
+                                modifier = Modifier.width(44.dp), textAlign = TextAlign.End)
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+
+                    // ---------- Bass Boost ----------
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Bass", color = TextSecondary, fontSize = 11.sp,
+                            modifier = Modifier.width(52.dp))
+                        Slider(
+                            value = bass.toFloat(),
+                            onValueChange = { v ->
+                                bass = v.toInt()
+                                EqualizerManager.setBassStrength(v.toInt())
+                            },
+                            valueRange = 0f..1000f,
+                            colors = SliderDefaults.colors(
+                                thumbColor = Color.White,
+                                activeTrackColor = Pink,
+                                inactiveTrackColor = TrackColor
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text("${(bass * 100) / 1000}%",
+                            color = TextSecondary, fontSize = 11.sp,
+                            modifier = Modifier.width(44.dp), textAlign = TextAlign.End)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Cerrar", color = Purple) }
+        }
+    )
+}
+
+// Formatea la frecuencia central de una banda (60 Hz, 230 Hz, 3.6k…)
+private fun formatFreq(milliHz: Int): String =
+    if (milliHz >= 1_000_000) "%.1fk".format(milliHz / 1_000_000f)
+    else "${milliHz / 1000}"
+
+// Formatea los milibelios como decibelios (+3, -5…)
+private fun dbLabel(milliBel: Int): String {
+    val db = milliBel / 100
+    return if (db > 0) "+$db" else "$db"
 }
 
 // ============================================================
