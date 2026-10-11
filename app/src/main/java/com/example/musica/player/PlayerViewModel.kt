@@ -1,5 +1,6 @@
 package com.example.musica.player
 
+import com.example.musica.data.DownloadRepository
 import android.app.Application
 import android.content.ComponentName
 import android.net.Uri
@@ -284,10 +285,14 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         c.play()
     }
 
-    private fun toMediaItem(s: Song): MediaItem {
-        val uri = if (s.fromTelegram && s.fileId.isNotEmpty())
-            "https://tg.file/${s.fileId}"
-        else s.url.ifBlank { DEMO_URL }
+        private fun toMediaItem(s: Song): MediaItem {
+        // Si la canción está descargada, reproduce el archivo local (offline)
+        val local = DownloadRepository.downloadedFile(s.id)
+        val uri = when {
+            local != null -> Uri.fromFile(local)
+            s.fromTelegram && s.fileId.isNotEmpty() -> "https://tg.file/${s.fileId}"
+            else -> s.url.ifBlank { DEMO_URL }
+        }
         val artwork = if (s.coverPath.isNotBlank()) Uri.fromFile(File(s.coverPath)) else null
         val metadata = MediaMetadata.Builder()
             .setTitle(s.title)
