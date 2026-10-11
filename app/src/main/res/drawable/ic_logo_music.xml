@@ -1,0 +1,157 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="200dp"
+    android:height="200dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+
+    <!-- Fondo con luz central sutil -->
+    <path android:pathData="M0,0 L512,0 L512,512 L0,512 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="256" android:centerY="190"
+                android:gradientRadius="320"
+                android:startColor="#101A33"
+                android:endColor="#05070F" />
+        </aapt:attr>
+    </path>
+
+    <!-- Aro de marca: brillo exterior -->
+    <path
+        android:pathData="M26,256 a230,230 0 1,0 460,0 a230,230 0 1,0 -460,0 Z"
+        android:strokeWidth="26" android:strokeAlpha="0.18" android:fillColor="#00000000">
+        <aapt:attr name="android:strokeColor">
+            <gradient android:type="linear"
+                android:startX="40" android:startY="60"
+                android:endX="472" android:endY="452"
+                android:startColor="#22D3EE"
+                android:centerColor="#8B5CF6"
+                android:endColor="#EC4899" />
+        </aapt:attr>
+    </path>
+
+    <!-- Aro de marca principal -->
+    <path
+        android:pathData="M26,256 a230,230 0 1,0 460,0 a230,230 0 1,0 -460,0 Z"
+        android:strokeWidth="10" android:fillColor="#00000000">
+        <aapt:attr name="android:strokeColor">
+            <gradient android:type="linear"
+                android:startX="40" android:startY="60"
+                android:endX="472" android:endY="452"
+                android:startColor="#22D3EE"
+                android:centerColor="#8B5CF6"
+                android:endColor="#EC4899" />
+        </aapt:attr>
+    </path>
+
+    <!-- Disco de vinilo -->
+    <path
+        android:pathData="M106,256 a150,150 0 1,0 300,0 a150,150 0 1,0 -300,0 Z"
+        android:fillColor="#10182B"
+        android:strokeColor="#1E2A45"
+        android:strokeWidth="2" />
+
+    <!-- Surcos del vinilo -->
+    <path android:pathData="M118,256 a138,138 0 1,0 276,0 a138,138 0 1,0 -276,0 Z"
+        android:strokeColor="#2A3550" android:strokeAlpha="0.55"
+        android:strokeWidth="2" android:fillColor="#00000000" />
+    <path android:pathData="M142,256 a114,114 0 1,0 228,0 a114,114 0 1,0 -228,0 Z"
+        android:strokeColor="#2A3550" android:strokeAlpha="0.55"
+        android:strokeWidth="2" android:fillColor="#00000000" />
+    <path android:pathData="M166,256 a90,90 0 1,0 180,0 a90,90 0 1,0 -180,0 Z"
+        android:strokeColor="#2A3550" android:strokeAlpha="0.55"
+        android:strokeWidth="2" android:fillColor="#00000000" />
+
+    <!-- Reflejo del disco -->
+    <path android:pathData="M112,256 A144,144 0 0,1 256,112"
+        android:strokeColor="#FFFFFF" android:strokeAlpha="0.08"
+        android:strokeWidth="12" android:fillColor="#00000000" />
+
+    <!-- Halo de luz detrás de la nota -->
+    <path android:pathData="M128,254 a120,120 0 1,0 240,0 a120,120 0 1,0 -240,0 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="radial"
+                android:centerX="248" android:centerY="254"
+                android:gradientRadius="120"
+                android:startColor="#668B5CF6"
+                android:endColor="#008B5CF6" />
+        </aapt:attr>
+    </path>
+
+    <!-- Etiqueta central del vinilo -->
+    <path android:pathData="M194,256 a62,62 0 1,0 124,0 a62,62 0 1,0 -124,0 Z"
+        android:strokeColor="#0A0F1E" android:strokeWidth="3">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="radial"
+                android:centerX="244" android:centerY="244"
+                android:gradientRadius="70"
+                android:startColor="#C084FC"
+                android:endColor="#7C3AED" />
+        </aapt:attr>
+    </path>
+
+    <!-- Ondas de sonido (derecha) -->
+    <path android:pathData="M410,167 A178,178 0 0,1 410,345"
+        android:strokeWidth="8" android:strokeAlpha="0.8" android:fillColor="#00000000">
+        <aapt:attr name="android:strokeColor">
+            <gradient android:type="linear"
+                android:startX="40" android:startY="60"
+                android:endX="472" android:endY="452"
+                android:startColor="#22D3EE"
+                android:centerColor="#8B5CF6"
+                android:endColor="#EC4899" />
+        </aapt:attr>
+    </path>
+    <path android:pathData="M431,155 A202,202 0 0,1 431,357"
+        android:strokeWidth="6" android:strokeAlpha="0.45" android:fillColor="#00000000">
+        <aapt:attr name="android:strokeColor">
+            <gradient android:type="linear"
+                android:startX="40" android:startY="60"
+                android:endX="472" android:endY="452"
+                android:startColor="#22D3EE"
+                android:centerColor="#8B5CF6"
+                android:endColor="#EC4899" />
+        </aapt:attr>
+    </path>
+
+    <!-- Ondas de sonido (izquierda) -->
+    <path android:pathData="M102,167 A178,178 0 0,0 102,345"
+        android:strokeWidth="8" android:strokeAlpha="0.8" android:fillColor="#00000000">
+        <aapt:attr name="android:strokeColor">
+            <gradient android:type="linear"
+                android:startX="40" android:startY="60"
+                android:endX="472" android:endY="452"
+                android:startColor="#22D3EE"
+                android:centerColor="#8B5CF6"
+                android:endColor="#EC4899" />
+        </aapt:attr>
+    </path>
+    <path android:pathData="M81,155 A202,202 0 0,0 81,357"
+        android:strokeWidth="6" android:strokeAlpha="0.45" android:fillColor="#00000000">
+        <aapt:attr name="android:strokeColor">
+            <gradient android:type="linear"
+                android:startX="40" android:startY="60"
+                android:endX="472" android:endY="452"
+                android:startColor="#22D3EE"
+                android:centerColor="#8B5CF6"
+                android:endColor="#EC4899" />
+        </aapt:attr>
+    </path>
+
+    <!-- Nota musical (doble corchea) en blanco -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M197,198 L299,176 L299,196 L197,218 Z" />
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M197,210 L211,210 L211,308 L197,308 Z" />
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M285,188 L299,188 L299,278 L285,278 Z" />
+    <group android:rotation="-20" android:pivotX="204" android:pivotY="312">
+        <path android:fillColor="#FFFFFF"
+            android:pathData="M204,312 m-26,0 a26,20 0 1,0 52,0 a26,20 0 1,0 -52,0 Z" />
+    </group>
+    <group android:rotation="-20" android:pivotX="292" android:pivotY="282">
+        <path android:fillColor="#FFFFFF"
+            android:pathData="M292,282 m-26,0 a26,20 0 1,0 52,0 a26,20 0 1,0 -52,0 Z" />
+    </group>
+</vector>
