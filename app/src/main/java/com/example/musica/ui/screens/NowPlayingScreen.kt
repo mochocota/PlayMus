@@ -10,7 +10,6 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -22,6 +21,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -58,6 +59,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.navigation.NavHostController
 import com.example.musica.audio.EqualizerManager
+import com.example.musica.data.DownloadRepository
 import com.example.musica.data.FavoritesRepository
 import com.example.musica.data.LyricLine
 import com.example.musica.data.LyricsRepository
@@ -93,6 +95,12 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
     var dragValue by remember { mutableStateOf(0f) }
     var songToAdd by remember { mutableStateOf<Song?>(null) }
     var showEq by remember { mutableStateOf(false) }
+    var showDeleteDl by remember { mutableStateOf(false) }
+
+    // ---------- Descargas ----------
+    val dlVersion by DownloadRepository.version.collectAsState()
+    val dlProgress by DownloadRepository.progress.collectAsState()
+    val context = LocalContext.current
 
     var showLyrics by remember { mutableStateOf(false) }
     var lyrics by remember { mutableStateOf<LyricsResult?>(null) }
@@ -100,8 +108,6 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
     var lyricsFail by remember { mutableStateOf(false) }
     var loadedFor by remember { mutableStateOf<Int?>(null) }
     var retry by remember { mutableStateOf(0) }
-
-    val context = LocalContext.current
 
     val castUsable = remember {
         try {
@@ -131,6 +137,12 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
             lyricsLoading = false
         }
     }
+
+    // ¿Está descargada la canción actual? (se recalcula con dlVersion)
+    val isDownloaded = remember(dlVersion, song?.id) {
+        song != null && DownloadRepository.isDownloaded(song.id)
+    }
+    val dl = song?.let { dlProgress[it.id] }
 
     Box(Modifier.fillMaxSize().background(NavyBg)) {
 
@@ -174,6 +186,38 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                                 Text("${song.album.ifBlank { song.genre }} · ${song.artist}",
                                     color = TextSecondary, fontSize = 13.sp, maxLines = 1)
                             }
+
+                            // ---------- Botón de descarga ----------
+                            IconButton(onClick = {
+                                when {
+                                    isDownloaded -> showDeleteDl = true
+                                    dl == null -> DownloadRepository.startDownload(song) { result ->
+                                        Toast.makeText(
+                                            context,
+                                            if (result == "ok") "Descarga completa ✓" else result,
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                }
+                            }) {
+                                when {
+                                    dl != null -> {
+                                        val frac = if (dl.second > 0)
+                                            dl.first.toFloat() / dl.second else 0f
+                                        CircularProgressIndicator(
+                                            progress = { frac.coerceIn(0f, 1f) },
+                                            modifier = Modifier.size(22.dp),
+                                            strokeWidth = 2.dp,
+                                            color = Cyan
+                                        )
+                                    }
+                                    isDownloaded -> Icon(Icons.Filled.DownloadDone,
+                                        "Descargada", tint = Cyan)
+                                    else -> Icon(Icons.Filled.Download,
+                                        "Descargar", tint = Color.White)
+                                }
+                            }
+
                             IconButton(onClick = {
                                 val nowFav = FavoritesRepository.toggle(song.id)
                                 favMsg = if (nowFav) "Agregado a favoritos" else "Eliminado de favoritos"
@@ -239,7 +283,6 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically) {
 
-                            // ---------- Botón de Cast ----------
                             if (castUsable) {
                                 Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
                                     AndroidView(
@@ -274,7 +317,6 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                                 Icon(Icons.Filled.Lyrics, "Ver letra",
                                     tint = Color.White, modifier = Modifier.size(28.dp))
                             }
-                            // ---------- Botón del ecualizador ----------
                             IconButton(onClick = { showEq = true }) {
                                 Icon(Icons.Filled.Equalizer, "Ecualizador",
                                     tint = Color.White, modifier = Modifier.size(28.dp))
@@ -328,8 +370,29 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
 
     AddToPlaylistDialog(songToAdd) { songToAdd = null }
 
-    // ---------- Ecualizador ----------
     if (showEq) EqualizerDialog(onDismiss = { showEq = false })
+
+    // ---------- Confirmación: eliminar la descarga ----------
+    if (showDeleteDl && song != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDl = false },
+            containerColor = CardDark,
+            title = { Text("Eliminar descarga", color = Color.White, fontWeight = FontWeight.Bold) },
+            text = {
+                Text("¿Eliminar «${song.title}» del teléfono? Podrás volver a escucharla en línea.",
+                    color = TextSecondary, fontSize = 14.sp)
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    DownloadRepository.delete(song.id)
+                    showDeleteDl = false
+                }) { Text("Eliminar", color = Pink) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDl = false }) { Text("Cancelar", color = Purple) }
+            }
+        )
+    }
 }
 
 // ============================================================
@@ -371,7 +434,6 @@ private fun EqualizerDialog(onDismiss: () -> Unit) {
             } else {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
 
-                    // ---------- Presets ----------
                     Text("Presets", color = TextSecondary, fontSize = 12.sp)
                     Spacer(Modifier.height(6.dp))
                     Row(
@@ -399,7 +461,6 @@ private fun EqualizerDialog(onDismiss: () -> Unit) {
                     }
                     Spacer(Modifier.height(12.dp))
 
-                    // ---------- Bandas ----------
                     levels.forEachIndexed { i, lvl ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(formatFreq(EqualizerManager.bandFreq(i)),
@@ -428,7 +489,6 @@ private fun EqualizerDialog(onDismiss: () -> Unit) {
 
                     Spacer(Modifier.height(8.dp))
 
-                    // ---------- Bass Boost ----------
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Bass", color = TextSecondary, fontSize = 11.sp,
                             modifier = Modifier.width(52.dp))
@@ -459,12 +519,10 @@ private fun EqualizerDialog(onDismiss: () -> Unit) {
     )
 }
 
-// Formatea la frecuencia central de una banda (60 Hz, 230 Hz, 3.6k…)
 private fun formatFreq(milliHz: Int): String =
     if (milliHz >= 1_000_000) "%.1fk".format(milliHz / 1_000_000f)
     else "${milliHz / 1000}"
 
-// Formatea los milibelios como decibelios (+3, -5…)
 private fun dbLabel(milliBel: Int): String {
     val db = milliBel / 100
     return if (db > 0) "+$db" else "$db"
@@ -577,7 +635,6 @@ private fun LyricsView(
     }
 }
 
-// Letra sincronizada: resalta la línea que suena y se desplaza sola
 @Composable
 private fun SyncedLyrics(lines: List<LyricLine>, vm: PlayerViewModel) {
     val listState = rememberLazyListState()
