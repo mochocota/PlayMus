@@ -12,6 +12,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -34,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
+import com.example.musica.data.DownloadRepository
 import com.example.musica.data.FavoritesRepository
 import com.example.musica.data.MusicRepository
 import com.example.musica.data.PlaylistRepository
@@ -42,6 +44,7 @@ import com.example.musica.data.UserPlaylist
 import com.example.musica.ui.components.AlbumArt
 import com.example.musica.ui.components.CoverImage
 import com.example.musica.ui.theme.CardDark
+import com.example.musica.ui.theme.Cyan
 import com.example.musica.ui.theme.NavyBg
 import com.example.musica.ui.theme.Pink
 import com.example.musica.ui.theme.Purple
@@ -52,11 +55,17 @@ fun PlaylistsScreen(nav: NavHostController) {
     val userLists by PlaylistRepository.playlists.collectAsState()
     val songs by MusicRepository.songs.collectAsState()
     val favIds by FavoritesRepository.ids.collectAsState()
+    val dlVersion by DownloadRepository.version.collectAsState()
     var showCreate by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
     var listToDelete by remember { mutableStateOf<UserPlaylist?>(null) }
 
-    val favSongs = favIds.mapNotNull { id -> songs.firstOrNull { it.id == id } }
+    val favSongs = remember(favIds, songs) {
+        favIds.mapNotNull { id -> songs.firstOrNull { it.id == id } }
+    }
+    val downloadedSongs = remember(dlVersion, songs) {
+        songs.filter { DownloadRepository.isDownloaded(it.id) }
+    }
 
     Column(Modifier.fillMaxSize().background(NavyBg).padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -69,7 +78,7 @@ fun PlaylistsScreen(nav: NavHostController) {
             }
         }
         Spacer(Modifier.height(6.dp))
-        Text("Favoritos y tus listas", color = TextSecondary, fontSize = 13.sp)
+        Text("Descargas, favoritos y tus listas", color = TextSecondary, fontSize = 13.sp)
         Spacer(Modifier.height(14.dp))
 
         LazyVerticalGrid(
@@ -78,7 +87,20 @@ fun PlaylistsScreen(nav: NavHostController) {
             horizontalArrangement = Arrangement.spacedBy(14.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
-            // ---------- Favoritos (siempre primero, sin borrar) ----------
+            // ---------- Descargas (siempre, con badge ⬇️) ----------
+            item {
+                PlaylistCard(
+                    name = "Descargas",
+                    count = downloadedSongs.size,
+                    covers = downloadedSongs.take(4),
+                    onClick = { nav.navigate("downloads") },
+                    badge = {
+                        Icon(Icons.Filled.Download, "Descargas",
+                            tint = Cyan, modifier = Modifier.size(14.dp))
+                    }
+                )
+            }
+            // ---------- Favoritos (siempre, sin borrar) ----------
             item {
                 PlaylistCard(
                     name = "Favoritos",
