@@ -68,7 +68,6 @@ import com.example.musica.ui.theme.TextSecondary
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
-// AppCompatActivity es un FragmentActivity: necesario para el diálogo Cast.
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -91,7 +90,6 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
     val tabs = listOf("home", "explore", "library")
     val context = LocalContext.current
 
-    // Permiso de notificaciones (Android 13+)
     val notifLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { }
@@ -105,27 +103,35 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
     }
 
     // ============================================================
-    // BUCLE AUTOMÁTICO PERMANENTE:
-    // - Si hay canciones sin procesar → las analiza (carátula/género)
-    // - Si hay géneros por buscar online → los busca
-    // - Si todo está al día → espera 1 minuto y revisa el canal
-    //   por si subiste canciones nuevas a Telegram
+    // BUCLE AUTOMÁTICO: procesa metadatos, busca géneros online
+    // y cada pocos ciclos revisa el canal por si hay canciones
+    // pendientes de importar (tandas de 1500).
     // ============================================================
     LaunchedEffect(Unit) {
         if (TelegramConfig.token(context).isNotBlank() && MusicRepository.songs.value.isEmpty()) {
             try { MusicRepository.sync() } catch (_: Exception) {}
         }
+        var cycles = 0
         while (isActive) {
             val meta = MusicRepository.pendingCount()
             val online = MusicRepository.pendingOnlineCount()
-            if (meta > 0) {
-                try { MusicRepository.scanPending() } catch (_: Exception) {}
-                delay(400)
-            } else if (online > 0) {
-                try { MusicRepository.enrichOnline() } catch (_: Exception) {}
-                delay(1500)
-            } else {
-                delay(60_000)
+            when {
+                meta > 0 -> {
+                    try { MusicRepository.scanPending() } catch (_: Exception) {}
+                    delay(400)
+                }
+                online > 0 -> {
+                    try { MusicRepository.enrichOnline() } catch (_: Exception) {}
+                    delay(1500)
+                }
+                else -> {
+                    delay(60_000)
+                    try { MusicRepository.sync() } catch (_: Exception) {}
+                }
+            }
+            cycles++
+            // Revisa el canal periódicamente aunque haya trabajo pendiente
+            if (cycles % 5 == 0) {
                 try { MusicRepository.sync() } catch (_: Exception) {}
             }
         }
