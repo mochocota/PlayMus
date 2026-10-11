@@ -10,6 +10,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -635,6 +636,7 @@ private fun LyricsView(
     }
 }
 
+// Letra sincronizada: resalta la línea que suena y se desplaza sola
 @Composable
 private fun SyncedLyrics(lines: List<LyricLine>, vm: PlayerViewModel) {
     val listState = rememberLazyListState()
