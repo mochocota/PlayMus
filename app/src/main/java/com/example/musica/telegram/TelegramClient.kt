@@ -11,20 +11,23 @@ object TelegramConfig {
     private const val PREFS = "telegram_prefs"
 
     // ============================================================
-    // 👇👇 PEGA AQUÍ TU TOKEN DEL BOT (entre las comillas) 👇👇
-    //
-    // Ejemplo:
-    // const val DEFAULT_BOT_TOKEN = "7123456789:AAHxxxxxxxxxxxxxxxxx"
-    //
-    // Así la app ya viene configurada al instalarla y compartirse.
-    // Si dejas "", la app pedirá el token en Configuración (como antes).
-    //
-    // ⚠️ Nota de seguridad: quien tenga el APK podría extraer el
-    // token. Mantén el bot como administrador SOLO de tu canal
-    // privado. Puedes revocar el token cuando quieras con
-    // @BotFather → /mybots → API Token → Revoke.
+    // 👇👇 TU TOKEN DEL BOT (ya integrado en la app) 👇👇
     // ============================================================
-    const val DEFAULT_BOT_TOKEN = "8942499566:AAHmsT8d9M5BDIk7JLGGm6Y0nHuhVNjkGHU"
+    const val DEFAULT_BOT_TOKEN = ""
+
+    // ============================================================
+    // 👇👇 IMPORTACIÓN AUTOMÁTICA ENTRE DISPOSITIVOS 👇👇
+    //
+    // Pega aquí el file_id de tu melodix_import.json y CUALQUIER
+    // dispositivo nuevo importará toda la biblioteca en su
+    // primera sincronización, sin volver a enviar nada.
+    //
+    // ¿De dónde saco el file_id? Cuando la app procesa el archivo
+    // de importación, el mensaje de estado de Biblioteca muestra:
+    //   "file_id: AQADBAAT..."
+    // Copia esa cadena completa y pégala aquí entre las comillas.
+    // ============================================================
+    const val DEFAULT_IMPORT_FILE_ID = ""
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -33,6 +36,17 @@ object TelegramConfig {
     fun token(ctx: Context): String {
         val saved = prefs(ctx).getString("token", "") ?: ""
         return saved.ifBlank { DEFAULT_BOT_TOKEN.trim() }
+    }
+
+    // file_id del archivo de importación: primero se busca el
+    // guardado en este teléfono; si no hay, el integrado en el código
+    fun autoImportFileId(ctx: Context): String {
+        val saved = prefs(ctx).getString("auto_import_file_id", "") ?: ""
+        return saved.ifBlank { DEFAULT_IMPORT_FILE_ID.trim() }
+    }
+
+    fun saveAutoImportFileId(ctx: Context, fid: String) {
+        prefs(ctx).edit().putString("auto_import_file_id", fid).apply()
     }
 
     fun channel(ctx: Context): String = prefs(ctx).getString("channel", "") ?: ""
