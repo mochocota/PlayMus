@@ -31,15 +31,10 @@ object MusicRepository {
     private val mutex = Mutex()
     private lateinit var context: Context
 
-    // ============================================================
-    // PARÁMETROS DE VELOCIDAD
-    // ============================================================
     private const val SCAN_PARALLEL = 6
     private const val SCAN_BATCH = 24
     private const val ONLINE_PARALLEL = 4
     private const val ONLINE_BATCH = 8
-
-    // Intentos de búsqueda online por canción (máximo 3; luego se rinde)
     private val MAX_ONLINE_ATTEMPTS = 3
     private val attempts = ConcurrentHashMap<Int, Int>()
 
@@ -51,21 +46,17 @@ object MusicRepository {
         reclassifyLite()
     }
 
-    // ---------- Carátulas ----------
     private fun coversDir() = File(context.filesDir, "covers")
     fun coverFile(id: Int) = File(coversDir(), "$id.img")
 
     fun pendingCount(): Int = _songs.value.count { it.fromTelegram && !it.metaDone }
 
-    // Canciones pendientes de buscar género online:
-    // quedaron en "Otros", tienen título utilizable y no agotaron sus intentos
     fun pendingOnlineCount(): Int = _songs.value.count { s ->
         s.fromTelegram && s.genre == "Otros" &&
                 (attempts[s.id] ?: 0) < MAX_ONLINE_ATTEMPTS &&
                 s.title.isNotBlank() && s.title.length >= 3
     }
 
-    // ---------- Consultas ----------
     fun genresWithCount(): List<Pair<String, Int>> =
         _songs.value.groupingBy { it.genre }.eachCount().toList().sortedBy { it.first.lowercase() }
 
@@ -86,7 +77,11 @@ object MusicRepository {
         save()
     }
 
-    // ---------- Sincronización con Telegram ----------
+    // ============================================================
+    // SINCRONIZACIÓN: procesa TODOS los mensajes pendientes en
+    // tandas (hasta 1500 por pulsación). También detecta el
+    // archivo melodix_import.json para importar el historial.
+    // ============================================================
     suspend fun sync(): String = mutex.withLock {
         withContext(Dispatchers.IO) {
             val token = TelegramConfig.token(context)
@@ -95,77 +90,160 @@ object MusicRepository {
             val client = TelegramClient(token)
             client.deleteWebhook()
 
-            val updates = try {
-                client.getUpdates(TelegramConfig.offset(context), timeoutSec = 10)
-            } catch (e: Exception) {
-                return@withContext "Error al conectar: ${e.message}"
-            }
-
+            val known = _songs.value.map { it.fileId }.toMutableSet()
             val result = _songs.value.toMutableList()
             var added = 0
             var skipped = 0
             var fixed = 0
+            var imported = 0
+            var importError: String? = null
+            var offset = TelegramConfig.offset(context)
+            var processed = 0
+            val CAP = 1500
 
-            for (u in updates) {
-                val a = TelegramClient.extractAudio(u) ?: continue
+            while (processed < CAP) {
+                val updates = try {
+                    client.getUpdates(offset, if (processed == 0) 10 else 0)
+                } catch (e: Exception) {
+                    if (processed == 0) return@withContext "Error al conectar: ${e.message}"
+                    break
+                }
+                if (updates.isEmpty()) break
 
-                val existingIdx = result.indexOfFirst { it.fileId == a.fileId }
-                if (existingIdx >= 0) {
-                    val old = result[existingIdx]
-                    val hasTag = genreFromTags(a.caption) != null
-                    if (old.genre == "Otros" || hasTag) {
-                        val newGenre = detectGenre(a.caption, a.fileName, null) ?: old.genre
-                        if (newGenre != old.genre || a.caption != old.caption) {
-                            result[existingIdx] = old.copy(
-                                caption = a.caption.ifBlank { old.caption },
-                                fileName = a.fileName.ifBlank { old.fileName },
-                                genre = newGenre
-                            )
-                            fixed++
-                        }
+                var batchMax = -1L
+                for (u in updates) {
+                    batchMax = maxOf(batchMax, u.optLong("update_id", -1L))
+
+                    // ¿Es el archivo de importación del historial?
+                    val importFileId = extractImportFileId(u)
+                    if (importFileId != null) {
+                        val (n, err) = importFromJson(client, importFileId, result, known)
+                        imported += n
+                        if (err != null) importError = err
+                        continue
                     }
-                    continue
+
+                    val a = TelegramClient.extractAudio(u) ?: continue
+
+                    if (a.fileId in known) {
+                        val idx = result.indexOfFirst { it.fileId == a.fileId }
+                        if (idx >= 0) {
+                            val old = result[idx]
+                            val hasTag = genreFromTags(a.caption) != null
+                            if (old.genre == "Otros" || hasTag) {
+                                val newGenre = detectGenre(a.caption, a.fileName, null) ?: old.genre
+                                if (newGenre != old.genre || a.caption != old.caption) {
+                                    result[idx] = old.copy(
+                                        caption = a.caption.ifBlank { old.caption },
+                                        fileName = a.fileName.ifBlank { old.fileName },
+                                        genre = newGenre
+                                    )
+                                    fixed++
+                                }
+                            }
+                        }
+                        continue
+                    }
+
+                    if (a.fileSize > 19_500_000) { skipped++; continue }
+                    known.add(a.fileId)
+                    result.add(
+                        0, Song(
+                            id = a.fileId.hashCode(),
+                            title = a.title, artist = a.artist, album = "",
+                            durationSec = a.duration, url = "",
+                            fileId = a.fileId,
+                            genre = detectGenre(a.caption, a.fileName, null) ?: "Otros",
+                            fromTelegram = true,
+                            caption = a.caption,
+                            fileName = a.fileName
+                        )
+                    )
+                    added++
                 }
 
-                if (a.fileSize > 19_500_000) { skipped++; continue }
-                result.add(
-                    0, Song(
-                        id = a.fileId.hashCode(),
-                        title = a.title, artist = a.artist, album = "",
-                        durationSec = a.duration, url = "",
-                        fileId = a.fileId,
-                        genre = detectGenre(a.caption, a.fileName, null) ?: "Otros",
-                        fromTelegram = true,
-                        caption = a.caption,
-                        fileName = a.fileName
-                    )
-                )
-                added++
+                offset = batchMax + 1
+                processed += updates.size
+
+                // Guarda progreso parcial (clave en importaciones grandes)
+                if (added + imported > 0) {
+                    _songs.value = result.toList()
+                    save()
+                }
+                TelegramConfig.saveOffset(context, offset)
             }
+
             _songs.value = result
             save()
+            TelegramConfig.saveOffset(context, offset)
 
-            val maxId = updates.maxOfOrNull { it.optLong("update_id", -1L) } ?: -1L
-            if (maxId >= 0) {
-                TelegramConfig.saveOffset(context, maxId + 1)
-                try { client.getUpdates(maxId + 1, timeoutSec = 0) } catch (_: Exception) {}
-            }
-
-            // 1) Metadatos locales (carátula, álbum, género ID3) — en paralelo
             val covers = scanLocked(limit = SCAN_BATCH)
-            // 2) Re-clasificar lo que quedó como "Otros"
             fixed += reclassifyLite()
-            // 3) Buscar géneros online (iTunes / Deezer) — en paralelo
             val online = enrichLocked(limit = ONLINE_BATCH)
 
-            val sb = StringBuilder("Sincronizado: $added canciones nuevas")
+            val sb = StringBuilder()
+            if (imported > 0) sb.append("Importadas: $imported del historial")
+            if (added > 0) {
+                if (sb.isNotEmpty()) sb.append(" · ")
+                sb.append("Sincronizado: $added nuevas")
+            }
             if (skipped > 0) sb.append(" · $skipped omitidas (>20MB)")
             if (covers > 0) sb.append(" · $covers carátulas añadidas")
             if (online > 0) sb.append(" · $online géneros por internet")
             if (fixed > 0) sb.append(" · $fixed géneros corregidos")
-            if (updates.isEmpty() && added == 0 && covers == 0 && online == 0 && fixed == 0)
-                sb.append(" (sin cambios)")
+            if (importError != null) sb.append(" · Error importación: $importError")
+            if (sb.isEmpty()) sb.append("(sin cambios)")
             sb.toString()
+        }
+    }
+
+    // Detecta el documento melodix_import.json enviado al bot
+    private fun extractImportFileId(update: JSONObject): String? {
+        val msg = update.optJSONObject("message") ?: return null
+        val doc = msg.optJSONObject("document") ?: return null
+        val name = doc.optString("file_name", "")
+        if (!name.equals("melodix_import.json", ignoreCase = true)) return null
+        val fid = doc.optString("file_id", "")
+        return if (fid.isBlank()) null else fid
+    }
+
+    // Descarga y parsea el JSON, y añade las canciones que falten
+    private fun importFromJson(
+        client: TelegramClient,
+        fileId: String,
+        result: MutableList<Song>,
+        known: MutableSet<String>
+    ): Pair<Int, String?> {
+        return try {
+            val url = client.fileUrl(client.getFilePath(fileId))
+            val body = URL(url).readText()
+            val arr = JSONArray(body)
+            var n = 0
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val fid = o.optString("fileId", "")
+                if (fid.isBlank() || fid in known) continue
+                val caption = o.optString("caption", "")
+                val fileName = o.optString("fileName", "")
+                known.add(fid)
+                result.add(
+                    0, Song(
+                        id = fid.hashCode(),
+                        title = o.optString("title", "Sin título").ifBlank { "Sin título" },
+                        artist = o.optString("artist", "Desconocido").ifBlank { "Desconocido" },
+                        album = o.optString("album", ""),
+                        durationSec = o.optInt("durationSec", 0),
+                        url = "", fileId = fid,
+                        genre = detectGenre(caption, fileName, null) ?: "Otros",
+                        fromTelegram = true,
+                        caption = caption, fileName = fileName
+                    )
+                )
+                n++
+            }
+            n to null
+        } catch (e: Exception) {
+            0 to (e.message ?: "desconocido")
         }
     }
 
@@ -173,10 +251,6 @@ object MusicRepository {
 
     suspend fun enrichOnline(limit: Int = ONLINE_BATCH): Int = mutex.withLock { enrichLocked(limit) }
 
-    // ============================================================
-    // ESCANEO EN PARALELO de metadatos ID3 (carátula, título,
-    // artista, álbum, género). Hasta SCAN_PARALLEL a la vez.
-    // ============================================================
     private suspend fun scanLocked(limit: Int): Int = withContext(Dispatchers.IO) {
         val token = TelegramConfig.token(context)
         if (token.isBlank()) return@withContext 0
@@ -229,7 +303,6 @@ object MusicRepository {
                 var finalTitle = t?.takeIf { it.isNotBlank() } ?: newSong.title
                 var finalArtist = a?.takeIf { it.isNotBlank() } ?: newSong.artist
 
-                // Si no hay artista pero el título trae "Artista - Título", separar
                 if (finalArtist.isBlank() || finalArtist == "Desconocido") {
                     if (finalTitle.contains(" - ")) {
                         val parts = finalTitle.split(" - ", limit = 2)
@@ -255,11 +328,6 @@ object MusicRepository {
         return newSong
     }
 
-    // ============================================================
-    // BÚSQUEDA ONLINE EN PARALELO (iTunes primero, Deezer respaldo)
-    // Cada canción tiene MAX_ONLINE_ATTEMPTS intentos en total.
-    // Si acierta: asigna género y adopta artista/álbum correctos.
-    // ============================================================
     private data class OnlineHit(
         val genre: String,
         val artist: String?,
@@ -275,13 +343,11 @@ object MusicRepository {
         if (candidates.isEmpty()) return@withContext 0
 
         val sem = Semaphore(ONLINE_PARALLEL)
-        // Solo se guardan los aciertos (el mapa no acepta nulos)
         val results = ConcurrentHashMap<Int, OnlineHit>()
 
         val jobs = candidates.map { song ->
             launch {
                 sem.withPermit {
-                    // Contar el intento SIEMPRE (éxito o fallo)
                     attempts[song.id] = (attempts[song.id] ?: 0) + 1
                     val hit = lookupGenreOnline(song.title, song.artist)
                     if (hit != null) results[song.id] = hit
@@ -296,7 +362,6 @@ object MusicRepository {
         _songs.value = _songs.value.map { s ->
             val hit = results[s.id] ?: return@map s
             var updated = s.copy(genre = hit.genre, scanned = true)
-            // Adopta artista/álbum reales si los nuestros estaban vacíos/genéricos
             if ((s.artist.isBlank() || s.artist == "Desconocido") &&
                 !hit.artist.isNullOrBlank()) {
                 updated = updated.copy(artist = hit.artist)
@@ -310,7 +375,6 @@ object MusicRepository {
         got
     }
 
-    // ---------- Limpieza de títulos para buscar ----------
     private fun cleanForSearch(raw: String): String = raw
         .replace(Regex("\\(.*?\\)"), " ")
         .replace(Regex("\\[.*?\\]"), " ")
@@ -318,13 +382,10 @@ object MusicRepository {
         .replace(Regex("\\b(ft|feat|featuring|con)\\..*$", RegexOption.IGNORE_CASE), " ")
         .replace(Regex("\\s+"), " ").trim()
 
-    // Consulta iTunes primero; si no hay suerte, Deezer.
-    // Devuelve género + artista/álbum oficiales si los encuentra.
     private fun lookupGenreOnline(titleRaw: String, artistRaw: String): OnlineHit? {
         var title = cleanForSearch(titleRaw)
         var artist = artistRaw.takeIf { it.isNotBlank() && it != "Desconocido" } ?: ""
 
-        // Si no hay artista pero el título trae "Artista - Título", separar
         if (artist.isBlank() && title.contains(" - ")) {
             val parts = title.split(" - ", limit = 2)
             if (parts.size == 2 && parts[0].isNotBlank()) {
@@ -334,7 +395,6 @@ object MusicRepository {
         }
         if (title.isBlank()) return null
 
-        // ---------- 1) iTunes Search API ----------
         try {
             val term = listOf(artist, title).filter { it.isNotBlank() }.joinToString(" ")
             val q = URLEncoder.encode(term, "UTF-8")
@@ -365,7 +425,6 @@ object MusicRepository {
             }
         } catch (_: Exception) {}
 
-        // ---------- 2) Deezer (respaldo) ----------
         try {
             val q = if (artist.isNotBlank())
                 URLEncoder.encode("artist:\"$artist\" track:\"$title\"", "UTF-8")
@@ -384,7 +443,6 @@ object MusicRepository {
                         val track = data.getJSONObject(i)
                         val t = track.optString("title_short", track.optString("title", ""))
                         if (!titleMatches(t, title)) continue
-                        // Género del álbum
                         val albumId = track.optJSONObject("album")?.optLong("id") ?: 0L
                         if (albumId > 0) {
                             try {
@@ -422,7 +480,6 @@ object MusicRepository {
         return null
     }
 
-    // Comprueba que el título devuelto por internet se parece al buscado
     private fun titleMatches(onlineTitle: String, localTitle: String): Boolean {
         val a = norm(onlineTitle)
         val b = norm(localTitle)
@@ -435,14 +492,6 @@ object MusicRepository {
         return common >= 1 && common >= minOf(wa.size, wb.size) / 2
     }
 
-    // ============================================================
-    // DETECCIÓN DE GÉNERO — orden de prioridad:
-    // 1. Hashtags (#pop, #rock…) en el caption o nombre del archivo
-    // 2. Texto "género: X" en el caption
-    // 3. Etiqueta ID3 del MP3 (incluye tabla numérica ID3v1)
-    // 4. Palabras del género en el nombre del archivo (sin #)
-    // (Si nada funciona, después se busca online en iTunes/Deezer)
-    // ============================================================
     private fun norm(s: String): String = Normalizer.normalize(s, Normalizer.Form.NFD)
         .replace(Regex("\\p{M}+"), "").lowercase().trim()
 
@@ -482,7 +531,6 @@ object MusicRepository {
         return null
     }
 
-    // Tabla oficial ID3v1 (para etiquetas que llegan como número, ej: "13" = Pop)
     private val id3v1Names = listOf(
         "Blues", "Classic Rock", "Country", "Dance", "Disco", "Funk", "Grunge",
         "Hip-Hop", "Jazz", "Metal", "New Age", "Oldies", "Other", "Pop", "R&B",
@@ -508,7 +556,6 @@ object MusicRepository {
         "Dance Hall"
     )
 
-    // Sinónimos extra que traen iTunes/Deezer y no están en el mapa general
     private val extraGenreWords = listOf(
         "latin" to "Latino", "latino" to "Latino",
         "country" to "Country", "soul" to "Soul", "funk" to "Funk",
@@ -534,7 +581,6 @@ object MusicRepository {
             .replaceFirstChar { it.uppercase() }.ifBlank { null }
     }
 
-    // Re-clasifica (sin internet) las canciones guardadas como "Otros"
     private fun reclassifyLite(): Int {
         var count = 0
         val updated = _songs.value.map { s ->
@@ -551,7 +597,6 @@ object MusicRepository {
         return count
     }
 
-    // ---------- Intentos online (persistente) ----------
     private fun attemptsFile() = File(context.filesDir, "online_attempts.json")
 
     private fun saveAttempts() {
@@ -571,7 +616,6 @@ object MusicRepository {
         } catch (_: Exception) {}
     }
 
-    // ---------- Almacenamiento local (JSON) ----------
     private fun file() = File(context.filesDir, "library.json")
 
     private fun save() {
