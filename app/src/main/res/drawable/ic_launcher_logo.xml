@@ -3,8 +3,8 @@
     <item android:drawable="@color/ic_launcher_background" />
     <item
         android:drawable="@drawable/logo_icon"
-        android:left="21dp"
-        android:top="21dp"
-        android:right="21dp"
-        android:bottom="21dp" />
-</layer-list>
+        android:left="18dp"
+        android:top="18dp"
+        android:right="18dp"
+        android:bottom="18dp" />
+</adaptive-icon>
