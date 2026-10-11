@@ -1,6 +1,5 @@
 package com.example.musica.player
 
-import com.example.musica.data.DownloadRepository
 import android.app.Application
 import android.content.ComponentName
 import android.net.Uri
@@ -17,6 +16,7 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.example.musica.data.DEMO_URL
+import com.example.musica.data.DownloadRepository
 import com.example.musica.data.MusicRepository
 import com.example.musica.data.PlayStatsRepository
 import com.example.musica.data.Song
@@ -75,9 +75,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         private set
 
     // ============================================================
-    // IMPORTANTE: los listeners se declaran ANTES del bloque init,
-    // porque init los utiliza. En Kotlin el orden de declaración
-    // define el orden de inicialización.
+    // Los listeners se declaran ANTES del bloque init,
+    // porque init los utiliza.
     // ============================================================
     private val sessionListener = object : SessionManagerListener<CastSession> {
         override fun onSessionStarted(session: CastSession, sessionId: String) { onCastChanged(true) }
@@ -285,11 +284,11 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         c.play()
     }
 
-        private fun toMediaItem(s: Song): MediaItem {
+    private fun toMediaItem(s: Song): MediaItem {
         // Si la canción está descargada, reproduce el archivo local (offline)
         val local = DownloadRepository.downloadedFile(s.id)
         val uri = when {
-            local != null -> Uri.fromFile(local)
+            local != null -> Uri.fromFile(local).toString()
             s.fromTelegram && s.fileId.isNotEmpty() -> "https://tg.file/${s.fileId}"
             else -> s.url.ifBlank { DEMO_URL }
         }
