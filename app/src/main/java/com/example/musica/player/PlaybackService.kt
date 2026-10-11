@@ -33,7 +33,7 @@ class PlaybackService : MediaSessionService() {
                 .generateAudioSessionId()
         } catch (_: Exception) { 0 }
 
-        val builder = ExoPlayer.Builder(this)
+        val player = ExoPlayer.Builder(this)
             .setAudioAttributes(AudioAttributes.DEFAULT, true)
             .setHandleAudioBecomingNoisy(true) // pausa al desconectar audífonos
             .setMediaSourceFactory(
@@ -54,8 +54,13 @@ class PlaybackService : MediaSessionService() {
                     )
                 )
             )
-        if (sessionId > 0) builder.setAudioSessionId(sessionId)
-        val player = builder.build()
+            .build()
+
+        // Asigna la sesión de audio AL REPRODUCTOR YA CONSTRUIDO
+        // (por eso el ecualizador puede engancharse a ella)
+        if (sessionId > 0) {
+            try { player.setAudioSessionId(sessionId) } catch (_: Exception) {}
+        }
 
         // Engancha el ecualizador (restaura tus ajustes guardados)
         if (sessionId > 0) EqualizerManager.attach(sessionId)
