@@ -7,4 +7,4 @@
         android:top="18dp"
         android:right="18dp"
         android:bottom="18dp" />
-</adaptive-icon>
+</layer-list>
