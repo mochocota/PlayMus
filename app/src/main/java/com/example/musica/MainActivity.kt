@@ -23,6 +23,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -106,11 +107,14 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
     }
 
     // ============================================================
-    // BUCLE AUTOMÁTICO: procesa metadatos, busca géneros online
-    // y cada pocos ciclos revisa el canal por si hay canciones
-    // pendientes de importar (tandas de 1500).
+    // BUCLE AUTOMÁTICO — arranca cuando la biblioteca cargó.
+    // Procesa metadatos, busca géneros online y revisa el canal
+    // cada varios ciclos por si hay canciones pendientes.
     // ============================================================
-    LaunchedEffect(Unit) {
+    val ready by MusicRepository.ready.collectAsState()
+    LaunchedEffect(ready) {
+        if (!ready) return@LaunchedEffect
+
         if (TelegramConfig.token(context).isNotBlank() && MusicRepository.songs.value.isEmpty()) {
             try { MusicRepository.sync() } catch (_: Exception) {}
         }
@@ -133,8 +137,8 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
                 }
             }
             cycles++
-            // Revisa el canal periódicamente aunque haya trabajo pendiente
-            if (cycles % 5 == 0) {
+            // Revisa el canal con menos frecuencia mientras hay trabajo
+            if (cycles % 15 == 0) {
                 try { MusicRepository.sync() } catch (_: Exception) {}
             }
         }
