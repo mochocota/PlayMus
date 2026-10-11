@@ -97,9 +97,10 @@ object MusicRepository {
 
     // ============================================================
     // SINCRONIZACIÓN: procesa TODOS los mensajes pendientes en
-    // tandas (hasta 1500 por pulsación). También detecta el
-    // archivo melodix_import.json para importar el historial.
-    // Espera a que la biblioteca cargue antes de trabajar.
+    // tandas. Detecta el archivo melodix_import.json para importar
+    // el historial, y si la biblioteca está vacía intenta el
+    // AUTO-IMPORT (file_id integrado o guardado) para que los
+    // dispositivos nuevos carguen todo sin reenviar nada.
     // ============================================================
     suspend fun sync(): String {
         loadedGate.await()
@@ -118,9 +119,23 @@ object MusicRepository {
                 var fixed = 0
                 var imported = 0
                 var importError: String? = null
+                var manualImportFid: String? = null
                 var offset = TelegramConfig.offset(context)
                 var processed = 0
                 val CAP = 1500
+
+                // ---------- AUTO-IMPORT ----------
+                // Si la biblioteca está vacía (dispositivo nuevo o datos
+                // borrados), carga el archivo de importación integrado
+                // en la app o recordado por este teléfono.
+                if (_songs.value.isEmpty()) {
+                    val autoId = TelegramConfig.autoImportFileId(context)
+                    if (autoId.isNotBlank()) {
+                        val (n, err) = importFromJson(client, autoId, result, known)
+                        imported += n
+                        if (err != null) importError = "auto: $err"
+                    }
+                }
 
                 while (processed < CAP) {
                     val updates = try {
@@ -138,6 +153,10 @@ object MusicRepository {
                         // ¿Es el archivo de importación del historial?
                         val importFileId = extractImportFileId(u)
                         if (importFileId != null) {
+                            // Recuerda este file_id en el teléfono y muéstralo
+                            // para que pueda pegarse en DEFAULT_IMPORT_FILE_ID
+                            TelegramConfig.saveAutoImportFileId(context, importFileId)
+                            manualImportFid = importFileId
                             val (n, err) = importFromJson(client, importFileId, result, known)
                             imported += n
                             if (err != null) importError = err
@@ -213,6 +232,7 @@ object MusicRepository {
                 if (online > 0) sb.append(" · $online géneros por internet")
                 if (fixed > 0) sb.append(" · $fixed géneros corregidos")
                 if (importError != null) sb.append(" · Error importación: $importError")
+                if (manualImportFid != null) sb.append(" · file_id: $manualImportFid")
                 if (sb.isEmpty()) sb.append("(sin cambios)")
                 sb.toString()
             }
