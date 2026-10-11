@@ -275,6 +275,7 @@ object MusicRepository {
         if (candidates.isEmpty()) return@withContext 0
 
         val sem = Semaphore(ONLINE_PARALLEL)
+        // Solo se guardan los aciertos (el mapa no acepta nulos)
         val results = ConcurrentHashMap<Int, OnlineHit>()
 
         val jobs = candidates.map { song ->
@@ -282,7 +283,8 @@ object MusicRepository {
                 sem.withPermit {
                     // Contar el intento SIEMPRE (éxito o fallo)
                     attempts[song.id] = (attempts[song.id] ?: 0) + 1
-                    results[song.id] = lookupGenreOnline(song.title, song.artist)
+                    val hit = lookupGenreOnline(song.title, song.artist)
+                    if (hit != null) results[song.id] = hit
                 }
             }
         }
@@ -290,20 +292,17 @@ object MusicRepository {
         saveAttempts()
 
         if (results.isEmpty()) return@withContext 0
-        val got = results.values.count { it != null }
+        val got = results.size
         _songs.value = _songs.value.map { s ->
             val hit = results[s.id] ?: return@map s
-            var updated = s
-            if (hit != null) {
-                updated = updated.copy(genre = hit.genre, scanned = true)
-                // Adopta artista/álbum reales si los nuestros estaban vacíos/genéricos
-                if ((s.artist.isBlank() || s.artist == "Desconocido") &&
-                    !hit.artist.isNullOrBlank()) {
-                    updated = updated.copy(artist = hit.artist)
-                }
-                if (s.album.isBlank() && !hit.album.isNullOrBlank()) {
-                    updated = updated.copy(album = hit.album)
-                }
+            var updated = s.copy(genre = hit.genre, scanned = true)
+            // Adopta artista/álbum reales si los nuestros estaban vacíos/genéricos
+            if ((s.artist.isBlank() || s.artist == "Desconocido") &&
+                !hit.artist.isNullOrBlank()) {
+                updated = updated.copy(artist = hit.artist)
+            }
+            if (s.album.isBlank() && !hit.album.isNullOrBlank()) {
+                updated = updated.copy(album = hit.album)
             }
             updated
         }
