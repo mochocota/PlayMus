@@ -4,10 +4,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -21,6 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -34,7 +38,9 @@ import com.example.musica.player.PlayerViewModel
 import com.example.musica.ui.components.CoverImage
 import com.example.musica.ui.components.MiniPlayer
 import com.example.musica.ui.theme.CardDark
+import com.example.musica.ui.theme.CardLighter
 import com.example.musica.ui.theme.Cyan
+import com.example.musica.ui.theme.GradientBrush
 import com.example.musica.ui.theme.NavyBg
 import com.example.musica.ui.theme.Pink
 import com.example.musica.ui.theme.Purple
@@ -68,6 +74,52 @@ fun DownloadsScreen(nav: NavHostController, vm: PlayerViewModel) {
                 color = TextSecondary, fontSize = 13.sp,
                 modifier = Modifier.padding(start = 24.dp))
             Spacer(Modifier.height(10.dp))
+
+            // ---------- Botones: Reproducir todo / Aleatorio ----------
+            if (list.isNotEmpty()) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    // Reproducir todo (en orden)
+                    Box(
+                        Modifier.weight(1f).height(44.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(GradientBrush)
+                            .clickable { vm.play(list.first(), list) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.PlayArrow, null,
+                                tint = Color.White, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Reproducir todo", color = Color.White,
+                                fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                    // Aleatorio (mezcla; no se repite ninguna)
+                    Box(
+                        Modifier.weight(1f).height(44.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(CardLighter)
+                            .clickable {
+                                if (vm.repeatOne) vm.toggleRepeat()
+                                val mezcla = list.shuffled()
+                                vm.play(mezcla.first(), mezcla)
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.Shuffle, null,
+                                tint = Color.White, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Aleatorio", color = Color.White,
+                                fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+            }
 
             if (list.isEmpty()) {
                 Text(
