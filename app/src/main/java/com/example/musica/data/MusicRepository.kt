@@ -4,7 +4,10 @@ import android.content.Context
 import android.media.MediaMetadataRetriever
 import com.example.musica.telegram.TelegramClient
 import com.example.musica.telegram.TelegramConfig
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,7 +31,16 @@ object MusicRepository {
     private val _songs = MutableStateFlow<List<Song>>(emptyList())
     val songs: StateFlow<List<Song>> = _songs
 
+    // true cuando la biblioteca terminó de cargar en segundo plano
+    private val _ready = MutableStateFlow(false)
+    val ready: StateFlow<Boolean> = _ready
+
     private val mutex = Mutex()
+    // Señaliza que la carga inicial terminó (evita carreras)
+    private val loadedGate = CompletableDeferred<Unit>()
+    // Scope propio para la carga inicial (no bloquea la app al abrir)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     private lateinit var context: Context
 
     private const val SCAN_PARALLEL = 6
@@ -41,9 +53,15 @@ object MusicRepository {
     fun init(ctx: Context) {
         context = ctx.applicationContext
         coversDir().mkdirs()
-        load()
-        loadAttempts()
-        reclassifyLite()
+        // La carga del JSON (grande con miles de canciones) se hace en
+        // segundo plano para que la app abra al instante
+        scope.launch {
+            load()
+            loadAttempts()
+            reclassifyLite()
+            loadedGate.complete(Unit)
+            _ready.value = true
+        }
     }
 
     private fun coversDir() = File(context.filesDir, "covers")
@@ -81,119 +99,123 @@ object MusicRepository {
     // SINCRONIZACIÓN: procesa TODOS los mensajes pendientes en
     // tandas (hasta 1500 por pulsación). También detecta el
     // archivo melodix_import.json para importar el historial.
+    // Espera a que la biblioteca cargue antes de trabajar.
     // ============================================================
-    suspend fun sync(): String = mutex.withLock {
-        withContext(Dispatchers.IO) {
-            val token = TelegramConfig.token(context)
-            if (token.isBlank()) return@withContext "Primero configura tu bot en 'Canal de Telegram'"
+    suspend fun sync(): String {
+        loadedGate.await()
+        return mutex.withLock {
+            withContext(Dispatchers.IO) {
+                val token = TelegramConfig.token(context)
+                if (token.isBlank()) return@withContext "Primero configura tu bot en 'Canal de Telegram'"
 
-            val client = TelegramClient(token)
-            client.deleteWebhook()
+                val client = TelegramClient(token)
+                client.deleteWebhook()
 
-            val known = _songs.value.map { it.fileId }.toMutableSet()
-            val result = _songs.value.toMutableList()
-            var added = 0
-            var skipped = 0
-            var fixed = 0
-            var imported = 0
-            var importError: String? = null
-            var offset = TelegramConfig.offset(context)
-            var processed = 0
-            val CAP = 1500
+                val known = _songs.value.map { it.fileId }.toMutableSet()
+                val result = _songs.value.toMutableList()
+                var added = 0
+                var skipped = 0
+                var fixed = 0
+                var imported = 0
+                var importError: String? = null
+                var offset = TelegramConfig.offset(context)
+                var processed = 0
+                val CAP = 1500
 
-            while (processed < CAP) {
-                val updates = try {
-                    client.getUpdates(offset, if (processed == 0) 10 else 0)
-                } catch (e: Exception) {
-                    if (processed == 0) return@withContext "Error al conectar: ${e.message}"
-                    break
-                }
-                if (updates.isEmpty()) break
-
-                var batchMax = -1L
-                for (u in updates) {
-                    batchMax = maxOf(batchMax, u.optLong("update_id", -1L))
-
-                    // ¿Es el archivo de importación del historial?
-                    val importFileId = extractImportFileId(u)
-                    if (importFileId != null) {
-                        val (n, err) = importFromJson(client, importFileId, result, known)
-                        imported += n
-                        if (err != null) importError = err
-                        continue
+                while (processed < CAP) {
+                    val updates = try {
+                        client.getUpdates(offset, if (processed == 0) 10 else 0)
+                    } catch (e: Exception) {
+                        if (processed == 0) return@withContext "Error al conectar: ${e.message}"
+                        break
                     }
+                    if (updates.isEmpty()) break
 
-                    val a = TelegramClient.extractAudio(u) ?: continue
+                    var batchMax = -1L
+                    for (u in updates) {
+                        batchMax = maxOf(batchMax, u.optLong("update_id", -1L))
 
-                    if (a.fileId in known) {
-                        val idx = result.indexOfFirst { it.fileId == a.fileId }
-                        if (idx >= 0) {
-                            val old = result[idx]
-                            val hasTag = genreFromTags(a.caption) != null
-                            if (old.genre == "Otros" || hasTag) {
-                                val newGenre = detectGenre(a.caption, a.fileName, null) ?: old.genre
-                                if (newGenre != old.genre || a.caption != old.caption) {
-                                    result[idx] = old.copy(
-                                        caption = a.caption.ifBlank { old.caption },
-                                        fileName = a.fileName.ifBlank { old.fileName },
-                                        genre = newGenre
-                                    )
-                                    fixed++
+                        // ¿Es el archivo de importación del historial?
+                        val importFileId = extractImportFileId(u)
+                        if (importFileId != null) {
+                            val (n, err) = importFromJson(client, importFileId, result, known)
+                            imported += n
+                            if (err != null) importError = err
+                            continue
+                        }
+
+                        val a = TelegramClient.extractAudio(u) ?: continue
+
+                        if (a.fileId in known) {
+                            val idx = result.indexOfFirst { it.fileId == a.fileId }
+                            if (idx >= 0) {
+                                val old = result[idx]
+                                val hasTag = genreFromTags(a.caption) != null
+                                if (old.genre == "Otros" || hasTag) {
+                                    val newGenre = detectGenre(a.caption, a.fileName, null) ?: old.genre
+                                    if (newGenre != old.genre || a.caption != old.caption) {
+                                        result[idx] = old.copy(
+                                            caption = a.caption.ifBlank { old.caption },
+                                            fileName = a.fileName.ifBlank { old.fileName },
+                                            genre = newGenre
+                                        )
+                                        fixed++
+                                    }
                                 }
                             }
+                            continue
                         }
-                        continue
+
+                        if (a.fileSize > 19_500_000) { skipped++; continue }
+                        known.add(a.fileId)
+                        result.add(
+                            0, Song(
+                                id = a.fileId.hashCode(),
+                                title = a.title, artist = a.artist, album = "",
+                                durationSec = a.duration, url = "",
+                                fileId = a.fileId,
+                                genre = detectGenre(a.caption, a.fileName, null) ?: "Otros",
+                                fromTelegram = true,
+                                caption = a.caption,
+                                fileName = a.fileName
+                            )
+                        )
+                        added++
                     }
 
-                    if (a.fileSize > 19_500_000) { skipped++; continue }
-                    known.add(a.fileId)
-                    result.add(
-                        0, Song(
-                            id = a.fileId.hashCode(),
-                            title = a.title, artist = a.artist, album = "",
-                            durationSec = a.duration, url = "",
-                            fileId = a.fileId,
-                            genre = detectGenre(a.caption, a.fileName, null) ?: "Otros",
-                            fromTelegram = true,
-                            caption = a.caption,
-                            fileName = a.fileName
-                        )
-                    )
-                    added++
+                    offset = batchMax + 1
+                    processed += updates.size
+
+                    // Guarda progreso parcial (clave en importaciones grandes)
+                    if (added + imported > 0) {
+                        _songs.value = result.toList()
+                        save()
+                    }
+                    TelegramConfig.saveOffset(context, offset)
                 }
 
-                offset = batchMax + 1
-                processed += updates.size
-
-                // Guarda progreso parcial (clave en importaciones grandes)
-                if (added + imported > 0) {
-                    _songs.value = result.toList()
-                    save()
-                }
+                _songs.value = result
+                save()
                 TelegramConfig.saveOffset(context, offset)
+
+                val covers = scanLocked(limit = SCAN_BATCH)
+                fixed += reclassifyLite()
+                val online = enrichLocked(limit = ONLINE_BATCH)
+
+                val sb = StringBuilder()
+                if (imported > 0) sb.append("Importadas: $imported del historial")
+                if (added > 0) {
+                    if (sb.isNotEmpty()) sb.append(" · ")
+                    sb.append("Sincronizado: $added nuevas")
+                }
+                if (skipped > 0) sb.append(" · $skipped omitidas (>20MB)")
+                if (covers > 0) sb.append(" · $covers carátulas añadidas")
+                if (online > 0) sb.append(" · $online géneros por internet")
+                if (fixed > 0) sb.append(" · $fixed géneros corregidos")
+                if (importError != null) sb.append(" · Error importación: $importError")
+                if (sb.isEmpty()) sb.append("(sin cambios)")
+                sb.toString()
             }
-
-            _songs.value = result
-            save()
-            TelegramConfig.saveOffset(context, offset)
-
-            val covers = scanLocked(limit = SCAN_BATCH)
-            fixed += reclassifyLite()
-            val online = enrichLocked(limit = ONLINE_BATCH)
-
-            val sb = StringBuilder()
-            if (imported > 0) sb.append("Importadas: $imported del historial")
-            if (added > 0) {
-                if (sb.isNotEmpty()) sb.append(" · ")
-                sb.append("Sincronizado: $added nuevas")
-            }
-            if (skipped > 0) sb.append(" · $skipped omitidas (>20MB)")
-            if (covers > 0) sb.append(" · $covers carátulas añadidas")
-            if (online > 0) sb.append(" · $online géneros por internet")
-            if (fixed > 0) sb.append(" · $fixed géneros corregidos")
-            if (importError != null) sb.append(" · Error importación: $importError")
-            if (sb.isEmpty()) sb.append("(sin cambios)")
-            sb.toString()
         }
     }
 
@@ -247,10 +269,20 @@ object MusicRepository {
         }
     }
 
-    suspend fun scanPending(limit: Int = SCAN_BATCH): Int = mutex.withLock { scanLocked(limit) }
+    suspend fun scanPending(limit: Int = SCAN_BATCH): Int {
+        loadedGate.await()
+        return mutex.withLock { scanLocked(limit) }
+    }
 
-    suspend fun enrichOnline(limit: Int = ONLINE_BATCH): Int = mutex.withLock { enrichLocked(limit) }
+    suspend fun enrichOnline(limit: Int = ONLINE_BATCH): Int {
+        loadedGate.await()
+        return mutex.withLock { enrichLocked(limit) }
+    }
 
+    // ============================================================
+    // ESCANEO EN PARALELO de metadatos ID3 (carátula, título,
+    // artista, álbum, género). Hasta SCAN_PARALLEL a la vez.
+    // ============================================================
     private suspend fun scanLocked(limit: Int): Int = withContext(Dispatchers.IO) {
         val token = TelegramConfig.token(context)
         if (token.isBlank()) return@withContext 0
