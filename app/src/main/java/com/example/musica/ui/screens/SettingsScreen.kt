@@ -11,31 +11,44 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.IosShare
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
+import com.example.musica.data.MusicRepository
+import com.example.musica.telegram.TelegramClient
 import com.example.musica.telegram.TelegramConfig
 import com.example.musica.ui.theme.CardDark
 import com.example.musica.ui.theme.CardLighter
 import com.example.musica.ui.theme.Cyan
 import com.example.musica.ui.theme.GradientBrush
 import com.example.musica.ui.theme.NavyBg
+import com.example.musica.ui.theme.Pink
 import com.example.musica.ui.theme.Purple
 import com.example.musica.ui.theme.TextSecondary
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
-private fun SettingRow(icon: androidx.compose.ui.graphics.vector.ImageVector,
+private fun SettingRow(icon: ImageVector,
                        label: String, value: String? = null,
                        onClick: (() -> Unit)? = null,
                        trailing: @Composable () -> Unit = {}) {
@@ -59,12 +72,14 @@ private fun SettingRow(icon: androidx.compose.ui.graphics.vector.ImageVector,
 @Composable
 fun SettingsScreen(nav: NavHostController) {
     val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
     val tgConnected = TelegramConfig.token(ctx).isNotBlank()
+    var sharing by remember { mutableStateOf(false) }
+    var shareMsg by remember { mutableStateOf("") }
 
     Column(Modifier.fillMaxSize().background(NavyBg)
         .verticalScroll(rememberScrollState()).padding(16.dp)) {
 
-        // ---------- Encabezado ----------
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Color.White,
                 modifier = Modifier.clickable { nav.popBackStack() })
@@ -73,7 +88,6 @@ fun SettingsScreen(nav: NavHostController) {
         }
         Spacer(Modifier.height(20.dp))
 
-        // ---------- Biblioteca ----------
         Text("Biblioteca", color = TextSecondary, fontSize = 13.sp)
         Spacer(Modifier.height(8.dp))
 
@@ -93,6 +107,56 @@ fun SettingsScreen(nav: NavHostController) {
         ) {
             Icon(Icons.Filled.ChevronRight, null, tint = TextSecondary)
         }
+        Spacer(Modifier.height(8.dp))
+
+        // ---------- Compartir biblioteca ----------
+        // Genera el melodix_import.json con los file_id VÁLIDOS de
+        // tu biblioteca actual y te lo envía el bot por Telegram.
+        // Ese archivo se convierte en la semilla (seed_catalog.json)
+        // para que dispositivos nuevos tengan todo al instante.
+        SettingRow(
+            Icons.Filled.IosShare, "Compartir biblioteca", null,
+            onClick = {
+                if (sharing) return@SettingRow
+                scope.launch(Dispatchers.IO) {
+                    val chatId = TelegramConfig.importChatId(ctx)
+                    if (chatId == 0L) {
+                        withContext(Dispatchers.Main) {
+                            shareMsg = "Primero envía melodix_import.json al bot (así sabe a dónde mandarte la biblioteca)"
+                        }
+                        return@launch
+                    }
+                    val f = MusicRepository.libraryFile()
+                    if (!f.exists()) {
+                        withContext(Dispatchers.Main) {
+                            shareMsg = "La biblioteca está vacía."
+                        }
+                        return@launch
+                    }
+                    withContext(Dispatchers.Main) { sharing = true; shareMsg = "Enviando biblioteca…" }
+                    try {
+                        TelegramClient(TelegramConfig.token(ctx))
+                            .sendDocument(chatId, f, "melodix_import.json")
+                        withContext(Dispatchers.Main) {
+                            shareMsg = "✓ Enviada al chat del bot. Descárgala, renómbrala a seed_catalog.json y reemplázala en res/raw de GitHub."
+                        }
+                    } catch (e: Exception) {
+                        withContext(Dispatchers.Main) {
+                            shareMsg = "Error: ${e.message}"
+                        }
+                    } finally {
+                        withContext(Dispatchers.Main) { sharing = false }
+                    }
+                }
+            }
+        ) {
+            Icon(Icons.Filled.ChevronRight, null, tint = TextSecondary)
+        }
+        if (shareMsg.isNotBlank()) {
+            Text(shareMsg, color = if (shareMsg.startsWith("Error")) Pink else Cyan,
+                fontSize = 12.sp, lineHeight = 16.sp,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+        }
 
         // ---------- Firma del diseñador ----------
         Spacer(Modifier.height(48.dp))
@@ -103,7 +167,6 @@ fun SettingsScreen(nav: NavHostController) {
                     .padding(horizontal = 34.dp, vertical = 26.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Línea decorativa superior
                 Box(Modifier
                     .width(44.dp).height(3.dp)
                     .clip(RoundedCornerShape(2.dp))
