@@ -27,7 +27,7 @@ object TelegramConfig {
     //   "file_id: AQADBAAT..."
     // Copia esa cadena completa y pégala aquí entre las comillas.
     // ============================================================
-    const val DEFAULT_IMPORT_FILE_ID = ""
+    const val DEFAULT_IMPORT_FILE_ID = "CQACAgEAAyEGAAMBAozBXgACHdNqy0eiEK_CV1hrXMjCeQgXve8HmAAC3wkAAtTZKUbW7WojDK2hfh4E"
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
