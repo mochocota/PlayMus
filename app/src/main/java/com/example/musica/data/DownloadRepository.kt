@@ -17,6 +17,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 // Descarga canciones al teléfono para escucharlas sin internet.
+// También gestiona el MODO OFFLINE (mostrar solo lo descargado).
 object DownloadRepository {
 
     private lateinit var context: Context
@@ -25,9 +26,28 @@ object DownloadRepository {
     private val _progress = MutableStateFlow<Map<Int, Pair<Long, Long>>>(emptyMap())
     val progress: StateFlow<Map<Int, Pair<Long, Long>>> = _progress
 
-    // Contador de cambios (para que la UI reaccione a descargas/borrados)
+    // Contador de cambios (para que la UI reaccione)
     private val _version = MutableStateFlow(0)
     val version: StateFlow<Int> = _version
+
+    // Descarga por lotes (Descargar todas): (completadas, total) o null
+    private val _batch = MutableStateFlow<Pair<Int, Int>?>(null)
+    val batch: StateFlow<Pair<Int, Int>?> = _batch
+
+    // ---------- MODO OFFLINE ----------
+    private val _offlineMode = MutableStateFlow(false)
+    val offlineMode: StateFlow<Boolean> = _offlineMode
+
+    fun isOffline(): Boolean = _offlineMode.value
+
+    fun setOfflineMode(on: Boolean) {
+        _offlineMode.value = on
+        try {
+            prefs().edit().putBoolean("offline_mode", on).apply()
+        } catch (_: Exception) {}
+    }
+
+    private fun prefs() = context.getSharedPreferences("downloads_prefs", Context.MODE_PRIVATE)
 
     // Scope propio: las descargas continúan aunque salgas de la pantalla
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -37,6 +57,9 @@ object DownloadRepository {
     fun init(ctx: Context) {
         context = ctx.applicationContext
         dir().mkdirs()
+        try {
+            _offlineMode.value = prefs().getBoolean("offline_mode", false)
+        } catch (_: Exception) {}
     }
 
     private fun dir() = File(context.filesDir, "downloads")
@@ -77,6 +100,38 @@ object DownloadRepository {
         }
     }
 
+    // ============================================================
+    // DESCARGAR TODAS: descarga en secuencia una lista completa,
+    // saltando las ya descargadas. Informa progreso (n/total)
+    // vía el StateFlow batch y el resultado final por callback.
+    // ============================================================
+    fun startDownloadAll(songs: List<Song>, onResult: (String) -> Unit) {
+        scope.launch {
+            val pending = songs.filter { !isDownloaded(it.id) }
+            val total = pending.size
+            if (total == 0) {
+                withContext(Dispatchers.Main) { onResult("Ya están todas descargadas ✓") }
+                return@launch
+            }
+            _batch.value = 0 to total
+            var done = 0
+            var lastError: String? = null
+            for (s in pending) {
+                val r = download(s)
+                if (r == "ok") done++
+                else lastError = "«${s.title}»: $r"
+                _batch.value = done to total
+            }
+            _batch.value = null
+            withContext(Dispatchers.Main) {
+                onResult(
+                    if (lastError == null) "Descarga completa ✓ ($done canciones)"
+                    else "Descargadas $done de $total · $lastError"
+                )
+            }
+        }
+    }
+
     private suspend fun download(song: Song): String = mutex.withLock {
         withContext(Dispatchers.IO) {
             if (isDownloaded(song.id)) {
@@ -88,8 +143,6 @@ object DownloadRepository {
                 val url = if (song.fromTelegram && song.fileId.isNotEmpty()) {
                     val token = TelegramConfig.token(context)
                     if (token.isBlank()) return@withContext "Sin token del bot"
-                    // Usa el caché de URLs: si la canción sonó hace poco,
-                    // la resolución es instantánea
                     TelegramClient(token).resolveFileUrl(song.fileId)
                 } else {
                     song.url
