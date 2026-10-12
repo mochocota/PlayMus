@@ -8,6 +8,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -38,14 +39,13 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 // Caché LRU en memoria: guarda carátulas ya decodificadas.
-// Con RGB_565 cada imagen ocupa ~la mitad, así que caben muchas
-// más antes de empezar a reciclar (menos re-lecturas de disco).
+// RGB_565 ocupa ~la mitad de memoria: caben muchas más antes
+// de reciclar (menos re-lecturas de disco al desplazarse).
 private val bitmapCache = object : LruCache<String, Bitmap>(24 * 1024 * 1024) {
     override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
 }
 
-// Decodifica a un tamaño adaptado a las cuadrículas (~130dp):
-// 384px por lado es más que suficiente y muy ligero.
+// Decodifica a un tamaño adaptado a las cuadrículas (~130dp)
 private fun decodeSampled(path: String, target: Int): Bitmap? {
     return try {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -69,9 +69,9 @@ private fun decodeSampled(path: String, target: Int): Bitmap? {
 }
 
 // Carátula con carga fluida:
-// 1) Lectura SINCRÓNICA de la caché: si ya fue decodificada, aparece
-//    en el PRIMER frame (sin flash de degradado al reciclar celdas).
-// 2) Si no está, se decodifica en segundo plano y se funde suavemente.
+// 1) Lectura SINCRÓNICA de caché: celdas ya vistas aparecen al
+//    instante (sin flash de degradado al reciclar).
+// 2) Si no está en caché: decodifica en segundo plano + fundido.
 // 3) Insignia opcional de "disponible offline".
 @Composable
 fun CoverImage(
@@ -83,8 +83,7 @@ fun CoverImage(
 ) {
     val path = song?.coverPath
 
-    // Lectura sincrónica de caché en la primera composición:
-    // elimina el flash en celdas recicladas
+    // Lectura sincrónica de caché en la primera composición
     var bmp by remember(path) {
         mutableStateOf(if (path.isNullOrBlank()) null else bitmapCache.get(path))
     }
@@ -99,10 +98,12 @@ fun CoverImage(
     }
 
     Box(modifier) {
-        // Fundido suave entre placeholder e imagen (180 ms)
+        // El Crossfade SÍ recibe el tamaño (matchParentSize del Box
+        // exterior, que tiene el tamaño del llamador)
         Crossfade(
             targetState = bmp != null,
             animationSpec = tween(180),
+            modifier = Modifier.matchParentSize(),
             label = "coverFade"
         ) { hasImage ->
             if (hasImage && bmp != null) {
@@ -110,13 +111,13 @@ fun CoverImage(
                     bitmap = bmp!!.asImageBitmap(),
                     contentDescription = null,
                     modifier = Modifier
-                        .matchParentSize()
+                        .fillMaxSize()
                         .clip(RoundedCornerShape(corner)),
                     contentScale = ContentScale.Crop
                 )
             } else {
                 Box(
-                    Modifier.matchParentSize().clip(RoundedCornerShape(corner))
+                    Modifier.fillMaxSize().clip(RoundedCornerShape(corner))
                         .background(GradientBrush),
                     contentAlignment = Alignment.Center
                 ) {
