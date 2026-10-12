@@ -57,6 +57,10 @@ object MusicRepository {
         // segundo plano para que la app abra al instante
         scope.launch {
             load()
+            // CATÁLOGO SEMILLA: si la biblioteca está vacía (dispositivo
+            // nuevo) y la app lleva incrustado res/raw/seed_catalog.json,
+            // carga todas las canciones al instante, sin internet
+            if (_songs.value.isEmpty()) loadSeedCatalog()
             loadAttempts()
             reclassifyLite()
             loadedGate.complete(Unit)
@@ -96,13 +100,31 @@ object MusicRepository {
     }
 
     // ============================================================
+    // CATÁLOGO SEMILLA: si la app lleva incrustado el archivo
+    // res/raw/seed_catalog.json (las canciones del canal), lo carga
+    // al instante en un dispositivo nuevo, sin internet ni envíos.
+    // ============================================================
+    private fun loadSeedCatalog() {
+        try {
+            val resId = context.resources.getIdentifier(
+                "seed_catalog", "raw", context.packageName
+            )
+            if (resId == 0) return // la app no lleva semilla; se usará el auto-import
+            val body = context.resources.openRawResource(resId)
+                .bufferedReader().use { it.readText() }
+            val list = _songs.value.toMutableList()
+            val known = list.map { it.fileId }.toMutableSet()
+            parseAndMerge(body, list, known)
+            _songs.value = list
+        } catch (_: Exception) {}
+    }
+
+    // ============================================================
     // SINCRONIZACIÓN: procesa TODOS los mensajes pendientes en
     // tandas. Detecta el archivo melodix_import.json para importar
     // el historial, y si la biblioteca está vacía intenta el
-    // AUTO-IMPORT (file_id integrado o guardado) para que los
-    // dispositivos nuevos carguen todo sin reenviar nada.
-    // Si otro dispositivo está usando el bot (HTTP 409), no falla:
-    // avisa y continúa con carátulas y géneros.
+    // AUTO-IMPORT (file_id integrado o guardado). Si otro
+    // dispositivo está usando el bot (HTTP 409), no falla.
     // ============================================================
     suspend fun sync(): String {
         loadedGate.await()
@@ -165,13 +187,25 @@ object MusicRepository {
                         // ¿Es el archivo de importación del historial?
                         val importFileId = extractImportFileId(u)
                         if (importFileId != null) {
-                            // Recuerda este file_id en el teléfono y muéstralo
-                            // para que pueda pegarse en DEFAULT_IMPORT_FILE_ID
+                            // Recuerda este file_id en el teléfono
                             TelegramConfig.saveAutoImportFileId(context, importFileId)
                             manualImportFid = importFileId
                             val (n, err) = importFromJson(client, importFileId, result, known)
                             imported += n
                             if (err != null) importError = err
+                            // Envía el file_id al chat del usuario por Telegram:
+                            // ahí copiar es fácil y fiable (mantener pulsado → Copiar)
+                            val chatId = u.optJSONObject("message")
+                                ?.optJSONObject("chat")?.optLong("id") ?: 0L
+                            if (chatId != 0L) {
+                                TelegramConfig.saveImportChatId(context, chatId)
+                                try {
+                                    client.sendMessage(chatId,
+                                        "Melodix ✓ Importación procesada ($n canciones nuevas)\n\n" +
+                                        "file_id para integrar en la app (pégalo en DEFAULT_IMPORT_FILE_ID):\n\n" +
+                                        importFileId)
+                                } catch (_: Exception) {}
+                            }
                             continue
                         }
 
@@ -262,9 +296,7 @@ object MusicRepository {
         return if (fid.isBlank()) null else fid
     }
 
-    // Descarga y parsea el JSON, y añade las canciones que falten.
-    // Valida que la descarga sea realmente un JSON (evita interpretar
-    // una canción M4A como archivo de importación).
+    // Descarga el JSON por Telegram y lo incorpora
     private fun importFromJson(
         client: TelegramClient,
         fileId: String,
@@ -274,38 +306,49 @@ object MusicRepository {
         return try {
             val url = client.fileUrl(client.getFilePath(fileId))
             val body = URL(url).readText()
-            val trimmed = body.trimStart()
-            if (!trimmed.startsWith("[")) {
-                return 0 to "el file_id no apunta al JSON (vuelve a enviar melodix_import.json al bot)"
-            }
-            val arr = JSONArray(trimmed)
-            var n = 0
-            for (i in 0 until arr.length()) {
-                val o = arr.getJSONObject(i)
-                val fid = o.optString("fileId", "")
-                if (fid.isBlank() || fid in known) continue
-                val caption = o.optString("caption", "")
-                val fileName = o.optString("fileName", "")
-                known.add(fid)
-                result.add(
-                    0, Song(
-                        id = fid.hashCode(),
-                        title = o.optString("title", "Sin título").ifBlank { "Sin título" },
-                        artist = o.optString("artist", "Desconocido").ifBlank { "Desconocido" },
-                        album = o.optString("album", ""),
-                        durationSec = o.optInt("durationSec", 0),
-                        url = "", fileId = fid,
-                        genre = detectGenre(caption, fileName, null) ?: "Otros",
-                        fromTelegram = true,
-                        caption = caption, fileName = fileName
-                    )
-                )
-                n++
-            }
-            n to null
+            val n = parseAndMerge(body, result, known)
+            if (n < 0) 0 to "el file_id no apunta al JSON (vuelve a enviar melodix_import.json al bot)"
+            else n to null
         } catch (e: Exception) {
             0 to (e.message ?: "desconocido")
         }
+    }
+
+    // Convierte el texto JSON en canciones y las añade evitando
+    // duplicados. Devuelve cuántas añadió (o -1 si no era un catálogo).
+    // Lo usan: la importación online y el catálogo semilla incrustado.
+    private fun parseAndMerge(
+        body: String,
+        result: MutableList<Song>,
+        known: MutableSet<String>
+    ): Int {
+        val trimmed = body.trimStart()
+        if (!trimmed.startsWith("[")) return -1
+        val arr = JSONArray(trimmed)
+        var n = 0
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            val fid = o.optString("fileId", "")
+            if (fid.isBlank() || fid in known) continue
+            val caption = o.optString("caption", "")
+            val fileName = o.optString("fileName", "")
+            known.add(fid)
+            result.add(
+                0, Song(
+                    id = fid.hashCode(),
+                    title = o.optString("title", "Sin título").ifBlank { "Sin título" },
+                    artist = o.optString("artist", "Desconocido").ifBlank { "Desconocido" },
+                    album = o.optString("album", ""),
+                    durationSec = o.optInt("durationSec", 0),
+                    url = "", fileId = fid,
+                    genre = detectGenre(caption, fileName, null) ?: "Otros",
+                    fromTelegram = true,
+                    caption = caption, fileName = fileName
+                )
+            )
+            n++
+        }
+        return n
     }
 
     suspend fun scanPending(limit: Int = SCAN_BATCH): Int {
