@@ -15,12 +15,20 @@ import androidx.media3.session.MediaSessionService
 import com.example.musica.audio.EqualizerManager
 import com.example.musica.telegram.TelegramClient
 import com.example.musica.telegram.TelegramConfig
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 // Servicio que mantiene la música viva en segundo plano y genera
 // automáticamente la notificación con carátula y controles.
+// Además pre-resuelve la siguiente canción de la cola para que
+// las transiciones sean instantáneas.
 class PlaybackService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
         super.onCreate()
@@ -41,9 +49,7 @@ class PlaybackService : MediaSessionService() {
                 DefaultMediaSourceFactory(
                     ResolvingDataSource.Factory(
                         // DefaultDataSource entiende TODOS los esquemas:
-                        // file:// (descargas offline), https:// (streaming),
-                        // content://, etc. Antes solo hablaba HTTP y por
-                        // eso los archivos locales fallaban.
+                        // file:// (descargas offline) y https:// (streaming)
                         DefaultDataSource.Factory(
                             this,
                             DefaultHttpDataSource.Factory()
@@ -54,7 +60,7 @@ class PlaybackService : MediaSessionService() {
                             if (uri.host == "tg.file") {
                                 val fileId = uri.path?.trimStart('/').orEmpty()
                                 val client = TelegramClient(TelegramConfig.token(this))
-                                val real = client.fileUrl(client.getFilePath(fileId))
+                                val real = client.resolveFileUrl(fileId)
                                 dataSpec.buildUpon().setUri(real).build()
                             } else {
                                 dataSpec
@@ -66,7 +72,6 @@ class PlaybackService : MediaSessionService() {
             .build()
 
         // Asigna la sesión de audio AL REPRODUCTOR YA CONSTRUIDO
-        // (por eso el ecualizador puede engancharse a ella)
         if (sessionId > 0) {
             try { player.setAudioSessionId(sessionId) } catch (_: Exception) {}
         }
@@ -74,7 +79,37 @@ class PlaybackService : MediaSessionService() {
         // Engancha el ecualizador (restaura tus ajustes guardados)
         if (sessionId > 0) EqualizerManager.attach(sessionId)
 
+        // PRE-RESOLUCIÓN: cuando arranca una canción (o pasa a la
+        // siguiente), resuelve ya la URL de la siguiente pista en
+        // segundo plano; queda en la caché y la transición es instantánea
+        player.addListener(object : Player.Listener {
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state == Player.STATE_READY) preloadNext(player)
+            }
+
+            override fun onMediaItemTransition(item: MediaItem?, reason: Int) {
+                preloadNext(player)
+            }
+        })
+
         mediaSession = MediaSession.Builder(this, player).build()
+    }
+
+    private fun preloadNext(player: Player) {
+        try {
+            val idx = player.currentMediaItemIndex + 1
+            if (idx >= player.mediaItemCount) return
+            val uri = player.getMediaItemAt(idx).localConfiguration?.uri ?: return
+            if (uri.host != "tg.file") return
+            val fileId = uri.path?.trimStart('/').orEmpty()
+            if (fileId.isEmpty()) return
+            serviceScope.launch {
+                try {
+                    TelegramClient(TelegramConfig.token(this@PlaybackService))
+                        .resolveFileUrl(fileId)
+                } catch (_: Exception) {}
+            }
+        } catch (_: Exception) {}
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
@@ -90,6 +125,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        serviceScope.cancel()
         EqualizerManager.release()
         mediaSession?.run {
             player.release()
