@@ -2,6 +2,7 @@ package com.example.musica.telegram
 
 import android.content.Context
 import org.json.JSONObject
+import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -20,7 +21,7 @@ object TelegramConfig {
     // 👇👇 IMPORTACIÓN AUTOMÁTICA ENTRE DISPOSITIVOS 👇👇
     // (file_id del melodix_import.json que el bot te envía)
     // ============================================================
-    const val DEFAULT_IMPORT_FILE_ID = "d87e7389d5e2326d4537a4b403b90d8a"
+    const val DEFAULT_IMPORT_FILE_ID = ""
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -94,8 +95,42 @@ class TelegramClient(private val token: String) {
 
     fun getMe(): String = api("getMe", "{}").getJSONObject("result").optString("username")
 
+    // Envía un mensaje de texto a un chat (para entregarte el file_id)
     fun sendMessage(chatId: Long, text: String) {
         api("sendMessage", """{"chat_id":$chatId,"text":${JSONObject.quote(text)}}""")
+    }
+
+    // Envía un archivo local al chat (multipart). Se usa para
+    // compartir la biblioteca (con file_ids de bot válidos).
+    fun sendDocument(chatId: Long, file: File, fileName: String) {
+        val boundary = "----Melodix" + System.currentTimeMillis()
+        val conn = URL("https://api.telegram.org/bot$token/sendDocument")
+            .openConnection() as HttpURLConnection
+        try {
+            conn.requestMethod = "POST"
+            conn.doOutput = true
+            conn.connectTimeout = 30000
+            conn.readTimeout = 300000
+            conn.setRequestProperty("Content-Type", "multipart/form-data;boundary=$boundary")
+            conn.setChunkedStreamingMode(64 * 1024)
+            conn.outputStream.use { out ->
+                out.write(("--$boundary\r\n" +
+                        "Content-Disposition: form-data; name=\"chat_id\"\r\n\r\n" +
+                        "$chatId\r\n").toByteArray())
+                out.write(("--$boundary\r\n" +
+                        "Content-Disposition: form-data; name=\"document\"; filename=\"$fileName\"\r\n" +
+                        "Content-Type: application/json\r\n\r\n").toByteArray())
+                file.inputStream().use { it.copyTo(out) }
+                out.write(("\r\n--$boundary--\r\n").toByteArray())
+            }
+            val code = conn.responseCode
+            val body = conn.inputStream.bufferedReader().readText()
+            if (code !in 200..299) throw IOException("HTTP $code: $body")
+            val json = JSONObject(body)
+            if (!json.optBoolean("ok")) throw IOException(json.optString("description", "Error de Telegram"))
+        } finally {
+            conn.disconnect()
+        }
     }
 
     fun deleteWebhook() {
@@ -120,10 +155,9 @@ class TelegramClient(private val token: String) {
     fun fileUrl(filePath: String): String = "https://api.telegram.org/file/bot$token/$filePath"
 
     // ============================================================
-    // RESOLUCIÓN CON CACHÉ: convierte un file_id en URL directa
-    // de streaming. Las URLs de Telegram duran ~1 hora, así que
-    // cacheamos 45 minutos: si la misma canción vuelve a sonar
-    // pronto, no se vuelve a pedir a la API (arranque instantáneo).
+    // RESOLUCIÓN CON CACHÉ: convierte un file_id en URL directa.
+    // Las URLs duran ~1 hora; cacheamos 45 minutos: si la misma
+    // canción vuelve a sonar pronto, no se vuelve a pedir a la API.
     // ============================================================
     fun resolveFileUrl(fileId: String): String {
         Companion.cachedUrl(fileId)?.let { return it }
