@@ -885,11 +885,3 @@ private fun EqualizerDialog(onDismiss: () -> Unit) {
     )
 }
 
-private fun formatFreq(milliHz: Int): String =
-    if (milliHz >= 1_000_000) "%.1fk".format(milliHz / 1_000_000f)
-    else "${milliHz / 1000}"
-
-private fun dbLabel(milliBel: Int): String {
-    val db = milliBel / 100
-    return if (db > 0) "+$db" else "$db"
-}
