@@ -180,21 +180,22 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                         val fresh = MusicRepository.songs.value.firstOrNull { it.id == song.id } ?: song
 
-                        // ---------- Fila título: Sleep · Título · Descarga · Letra · Corazón ----------
+                        // ---------- Fila título: Título · Sleep · Descarga · Letra · Corazón ----------
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
 
-                            // Sleep Timer (lado izquierdo)
-                            IconButton(onClick = { showSleep = true }) {
-                                Icon(Icons.Filled.NightsStay, "Temporizador de sueño",
-                                    tint = if (vm.sleepTimerRemaining > 0 || vm.sleepTimerEndOfSong)
-                                        Cyan else Color.White)
-                            }
-
+                            // Título (como estaba antes)
                             Column(Modifier.weight(1f)) {
                                 Text(song.title, color = Color.White, fontSize = 20.sp,
                                     fontWeight = FontWeight.Bold, maxLines = 1)
                                 Text("${song.album.ifBlank { song.genre }} · ${song.artist}",
                                     color = TextSecondary, fontSize = 13.sp, maxLines = 1)
+                            }
+
+                            // Sleep Timer (izquierda de la descarga)
+                            IconButton(onClick = { showSleep = true }) {
+                                Icon(Icons.Filled.NightsStay, "Temporizador de sueño",
+                                    tint = if (vm.sleepTimerRemaining > 0 || vm.sleepTimerEndOfSong)
+                                        Cyan else Color.White)
                             }
 
                             // Descarga
