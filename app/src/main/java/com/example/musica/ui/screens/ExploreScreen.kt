@@ -42,8 +42,9 @@ fun ExploreScreen(nav: NavHostController, vm: PlayerViewModel) {
     else songsRaw
     var selected by remember { mutableStateOf("Todas") }
 
-    val genres = library.groupingBy { it.genre }.eachCount().toList()
-        .sortedBy { it.first.lowercase() }
+        val genres = remember(library) {
+        library.groupingBy { it.genre }.eachCount().toList().sortedBy { it.first.lowercase() }
+    }
     val visible = if (selected == "Todas") library
         else library.filter { it.genre == selected }
 
