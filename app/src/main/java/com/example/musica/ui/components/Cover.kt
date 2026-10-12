@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,9 +34,7 @@ import com.example.musica.data.DownloadRepository
 import com.example.musica.data.Song
 import com.example.musica.ui.theme.GradientBrush
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import androidx.compose.runtime.rememberCoroutineScope
 import java.io.File
 
 // Caché LRU en memoria: guarda carátulas ya decodificadas.
@@ -83,7 +82,6 @@ fun CoverImage(
     offlineBadge: Boolean = false
 ) {
     val path = song?.coverPath
-    val scope = rememberCoroutineScope()
 
     // Lectura sincrónica de caché en la primera composición:
     // elimina el flash en celdas recicladas
