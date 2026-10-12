@@ -273,7 +273,7 @@ object MusicRepository {
                 val online = enrichLocked(limit = ONLINE_BATCH)
 
                 val sb = StringBuilder()
-                if (repaired > 0) sb.append("Reparadas: $reparadas canciones")
+                if (repaired > 0) sb.append("Reparadas: $repaired canciones")
                 if (imported > 0) {
                     if (sb.isNotEmpty()) sb.append(" · ")
                     sb.append("Importadas: $imported del historial")
