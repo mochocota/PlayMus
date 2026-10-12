@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.StateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.util.concurrent.Executors
 
 // Historial real de reproducciones (últimas 50), persistente.
 object HistoryRepository {
@@ -14,6 +15,9 @@ object HistoryRepository {
 
     private val _entries = MutableStateFlow<List<Entry>>(emptyList())
     val entries: StateFlow<List<Entry>> = _entries
+
+    // Escrituras en segundo plano: nunca bloquean la UI
+    private val saveExecutor = Executors.newSingleThreadExecutor()
 
     private lateinit var context: Context
 
@@ -33,11 +37,16 @@ object HistoryRepository {
 
     private fun save() {
         try {
-            val arr = JSONArray()
-            _entries.value.forEach { e ->
-                arr.put(JSONObject().put("songId", e.songId).put("at", e.at))
+            val entries = _entries.value
+            saveExecutor.execute {
+                try {
+                    val arr = JSONArray()
+                    entries.forEach { e ->
+                        arr.put(JSONObject().put("songId", e.songId).put("at", e.at))
+                    }
+                    file().writeText(arr.toString())
+                } catch (_: Exception) {}
             }
-            file().writeText(arr.toString())
         } catch (_: Exception) {}
     }
 
