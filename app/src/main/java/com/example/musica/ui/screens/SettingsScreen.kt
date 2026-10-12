@@ -10,10 +10,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.IosShare
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -32,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
+import com.example.musica.data.DownloadRepository
 import com.example.musica.data.MusicRepository
 import com.example.musica.telegram.TelegramClient
 import com.example.musica.telegram.TelegramConfig
@@ -77,6 +81,10 @@ fun SettingsScreen(nav: NavHostController) {
     var sharing by remember { mutableStateOf(false) }
     var shareMsg by remember { mutableStateOf("") }
 
+    // Modo offline real (persistente)
+    var offline by remember { mutableStateOf(DownloadRepository.isOffline()) }
+    val dlCount = DownloadRepository.downloadedCount()
+
     Column(Modifier.fillMaxSize().background(NavyBg)
         .verticalScroll(rememberScrollState()).padding(16.dp)) {
 
@@ -91,7 +99,6 @@ fun SettingsScreen(nav: NavHostController) {
         Text("Biblioteca", color = TextSecondary, fontSize = 13.sp)
         Spacer(Modifier.height(8.dp))
 
-        // Canal conectado: informativo (deshabilitado)
         SettingRow(
             Icons.Filled.Cloud, "Canal de Telegram",
             if (tgConnected) "Conectado" else "Sin configurar"
@@ -100,7 +107,6 @@ fun SettingsScreen(nav: NavHostController) {
         }
         Spacer(Modifier.height(8.dp))
 
-        // Nuevo token: para guardar otro bot (con prueba de conexión)
         SettingRow(
             Icons.Filled.VpnKey, "Nuevo token", null,
             onClick = { nav.navigate("telegram") }
@@ -109,11 +115,30 @@ fun SettingsScreen(nav: NavHostController) {
         }
         Spacer(Modifier.height(8.dp))
 
+        // ---------- MODO OFFLINE (real) ----------
+        SettingRow(
+            Icons.Filled.CloudOff, "Modo offline",
+            if (offline) "ON · $dlCount descargas" else "OFF"
+        ) {
+            Switch(
+                checked = offline,
+                onCheckedChange = {
+                    DownloadRepository.setOfflineMode(it)
+                    offline = it
+                },
+                colors = SwitchDefaults.colors(checkedTrackColor = Purple)
+            )
+        }
+        if (offline) {
+            Text(
+                "Mostrando solo tus $dlCount canciones descargadas. Funcionan sin internet.",
+                color = Cyan, fontSize = 12.sp, lineHeight = 16.sp,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+
         // ---------- Compartir biblioteca ----------
-        // Genera el melodix_import.json con los file_id VÁLIDOS de
-        // tu biblioteca actual y te lo envía el bot por Telegram.
-        // Ese archivo se convierte en la semilla (seed_catalog.json)
-        // para que dispositivos nuevos tengan todo al instante.
         SettingRow(
             Icons.Filled.IosShare, "Compartir biblioteca", null,
             onClick = {
