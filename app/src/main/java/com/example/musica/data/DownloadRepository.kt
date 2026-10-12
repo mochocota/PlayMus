@@ -70,7 +70,6 @@ object DownloadRepository {
         } catch (_: Exception) {}
     }
 
-    private fun prefs() = context.getSharedPreferences("downloads_prefs", Context.MODE_PRIVATE)
     private fun dir() = File(context.filesDir, "downloads")
     private fun finalFile(id: Int) = File(dir(), "$id.mp3")
 
