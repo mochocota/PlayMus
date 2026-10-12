@@ -180,10 +180,57 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                         val fresh = MusicRepository.songs.value.firstOrNull { it.id == song.id } ?: song
 
+                        // ---------- Carátula (tamaño original) con Cast overlay ----------
+                        Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
+                            CoverImage(fresh, Modifier.fillMaxWidth().aspectRatio(1f),
+                                corner = 20.dp, sample = 1)
+
+                            // Cast dentro de la carátula, arriba a la derecha
+                            Box(
+                                Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(10.dp)
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Black.copy(alpha = 0.55f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (castUsable) {
+                                    AndroidView(
+                                        modifier = Modifier.size(30.dp),
+                                        factory = { ctx ->
+                                            try {
+                                                val themed = ContextThemeWrapper(
+                                                    ctx,
+                                                    androidx.appcompat.R.style.Theme_AppCompat_NoActionBar
+                                                )
+                                                MediaRouteButton(themed).apply {
+                                                    CastButtonFactory.setUpMediaRouteButton(ctx, this)
+                                                    visibility = android.view.View.VISIBLE
+                                                }
+                                            } catch (_: Exception) {
+                                                android.view.View(ctx)
+                                            }
+                                        }
+                                    )
+                                } else {
+                                    IconButton(onClick = {
+                                        Toast.makeText(context,
+                                            "Cast no disponible en este dispositivo",
+                                            Toast.LENGTH_SHORT).show()
+                                    }) {
+                                        Icon(Icons.Filled.Cast, "Cast", tint = Color.White,
+                                            modifier = Modifier.size(20.dp))
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(16.dp))
+
                         // ---------- Fila título: Título · Sleep · Descarga · Letra · Corazón ----------
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
 
-                            // Título (como estaba antes)
+                            // Título (debajo de la carátula)
                             Column(Modifier.weight(1f)) {
                                 Text(song.title, color = Color.White, fontSize = 20.sp,
                                     fontWeight = FontWeight.Bold, maxLines = 1)
@@ -191,7 +238,7 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                                     color = TextSecondary, fontSize = 13.sp, maxLines = 1)
                             }
 
-                            // Sleep Timer (izquierda de la descarga)
+                            // Sleep Timer
                             IconButton(onClick = { showSleep = true }) {
                                 Icon(Icons.Filled.NightsStay, "Temporizador de sueño",
                                     tint = if (vm.sleepTimerRemaining > 0 || vm.sleepTimerEndOfSong)
@@ -247,53 +294,7 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                         }
                         Spacer(Modifier.height(8.dp))
 
-                        // ---------- Carátula (tamaño original) con Cast overlay ----------
-                        Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
-                            CoverImage(fresh, Modifier.fillMaxWidth().aspectRatio(1f),
-                                corner = 20.dp, sample = 1)
-
-                            // Cast dentro de la carátula, arriba a la derecha
-                            Box(
-                                Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(10.dp)
-                                    .size(40.dp)
-                                    .clip(CircleShape)
-                                    .background(Color.Black.copy(alpha = 0.55f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                if (castUsable) {
-                                    AndroidView(
-                                        modifier = Modifier.size(30.dp),
-                                        factory = { ctx ->
-                                            try {
-                                                val themed = ContextThemeWrapper(
-                                                    ctx,
-                                                    androidx.appcompat.R.style.Theme_AppCompat_NoActionBar
-                                                )
-                                                MediaRouteButton(themed).apply {
-                                                    CastButtonFactory.setUpMediaRouteButton(ctx, this)
-                                                    visibility = android.view.View.VISIBLE
-                                                }
-                                            } catch (_: Exception) {
-                                                android.view.View(ctx)
-                                            }
-                                        }
-                                    )
-                                } else {
-                                    IconButton(onClick = {
-                                        Toast.makeText(context,
-                                            "Cast no disponible en este dispositivo",
-                                            Toast.LENGTH_SHORT).show()
-                                    }) {
-                                        Icon(Icons.Filled.Cast, "Cast", tint = Color.White,
-                                            modifier = Modifier.size(20.dp))
-                                    }
-                                }
-                            }
-                        }
-                        Spacer(Modifier.height(16.dp))
-
+                        // ---------- Línea de tiempo ----------
                         val rawProgress = if (dragging) dragValue
                         else if (vm.duration > 0) vm.position.toFloat() / vm.duration else 0f
                         val progress = if (rawProgress.isNaN() || rawProgress < 0f) 0f
