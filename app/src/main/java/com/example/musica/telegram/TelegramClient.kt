@@ -13,7 +13,7 @@ object TelegramConfig {
     // ============================================================
     // 👇👇 TU TOKEN DEL BOT (ya integrado en la app) 👇👇
     // ============================================================
-    const val DEFAULT_BOT_TOKEN = ""
+    const val DEFAULT_BOT_TOKEN = "8990152902:AAG70gBYSAEnXUtbvdY_n5wBcJhFa6UkO5A"
 
     // ============================================================
     // 👇👇 IMPORTACIÓN AUTOMÁTICA ENTRE DISPOSITIVOS 👇👇
