@@ -5,10 +5,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import org.json.JSONObject
 import java.io.File
+import java.util.concurrent.Executors
 
 // Estadísticas de reproducción: cuántas veces sonó cada canción
 // y cuándo fue la última vez (para "Escuchado recientemente").
-// Persiste al cerrar la app.
 object PlayStatsRepository {
 
     private val _counts = MutableStateFlow<Map<Int, Int>>(emptyMap())
@@ -16,6 +16,9 @@ object PlayStatsRepository {
 
     private val _lastPlayed = MutableStateFlow<Map<Int, Long>>(emptyMap())
     val lastPlayed: StateFlow<Map<Int, Long>> = _lastPlayed
+
+    // Escrituras en segundo plano: nunca bloquean la UI
+    private val saveExecutor = Executors.newSingleThreadExecutor()
 
     private lateinit var context: Context
 
@@ -39,10 +42,16 @@ object PlayStatsRepository {
 
     private fun save() {
         try {
-            val o = JSONObject()
-            _counts.value.forEach { (k, v) -> o.put("c_$k", v) }
-            _lastPlayed.value.forEach { (k, v) -> o.put("l_$k", v) }
-            file().writeText(o.toString())
+            val counts = _counts.value
+            val last = _lastPlayed.value
+            saveExecutor.execute {
+                try {
+                    val o = JSONObject()
+                    counts.forEach { (k, v) -> o.put("c_$k", v) }
+                    last.forEach { (k, v) -> o.put("l_$k", v) }
+                    file().writeText(o.toString())
+                } catch (_: Exception) {}
+            }
         } catch (_: Exception) {}
     }
 
