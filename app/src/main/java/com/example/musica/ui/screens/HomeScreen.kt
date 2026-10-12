@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
+import com.example.musica.data.DownloadRepository
 import com.example.musica.data.MusicRepository
 import com.example.musica.data.PlayStatsRepository
 import com.example.musica.player.PlayerViewModel
@@ -29,7 +30,12 @@ import com.example.musica.ui.theme.TextSecondary
 
 @Composable
 fun HomeScreen(nav: NavHostController, vm: PlayerViewModel) {
-    val songs by MusicRepository.songs.collectAsState()
+    val songsRaw by MusicRepository.songs.collectAsState()
+    val offline by DownloadRepository.offlineMode.collectAsState()
+    // En modo offline: solo las descargadas
+    val songs = if (offline) songsRaw.filter { DownloadRepository.isDownloaded(it.id) }
+    else songsRaw
+
     val stats by PlayStatsRepository.counts.collectAsState()
     val lastPlayed by PlayStatsRepository.lastPlayed.collectAsState()
 
@@ -76,6 +82,13 @@ fun HomeScreen(nav: NavHostController, vm: PlayerViewModel) {
                 fontSize = 20.sp, fontWeight = FontWeight.Bold)
         }
 
+        // Aviso de modo offline
+        if (offline) {
+            Spacer(Modifier.height(12.dp))
+            Text("✈️ Modo offline · mostrando tus ${songs.size} descargas",
+                color = Cyan, fontSize = 12.sp)
+        }
+
         // ---------- Escuchado recientemente ----------
         Spacer(Modifier.height(22.dp))
         Text("Escuchado recientemente", color = Color.White, fontSize = 16.sp,
@@ -92,7 +105,7 @@ fun HomeScreen(nav: NavHostController, vm: PlayerViewModel) {
                         vm.play(s, recentSongs)
                         nav.navigate("player")
                     }) {
-                        CoverImage(s, Modifier.size(110.dp), corner = 14.dp)
+                        CoverImage(s, Modifier.size(110.dp), corner = 14.dp, offlineBadge = true)
                         Spacer(Modifier.height(8.dp))
                         Text(s.title, color = Color.White, fontSize = 13.sp, maxLines = 1)
                         Text(s.artist, color = TextSecondary, fontSize = 11.sp, maxLines = 1)
@@ -117,7 +130,7 @@ fun HomeScreen(nav: NavHostController, vm: PlayerViewModel) {
                         vm.play(s, topSongs)
                         nav.navigate("player")
                     }) {
-                        CoverImage(s, Modifier.size(110.dp), corner = 14.dp)
+                        CoverImage(s, Modifier.size(110.dp), corner = 14.dp, offlineBadge = true)
                         Spacer(Modifier.height(8.dp))
                         Text("${i + 1}. ${s.title}", color = Color.White,
                             fontSize = 13.sp, maxLines = 1)
@@ -143,7 +156,7 @@ fun HomeScreen(nav: NavHostController, vm: PlayerViewModel) {
                         vm.play(s, recommended)
                         nav.navigate("player")
                     }) {
-                        CoverImage(s, Modifier.size(110.dp), corner = 14.dp)
+                        CoverImage(s, Modifier.size(110.dp), corner = 14.dp, offlineBadge = true)
                         Spacer(Modifier.height(8.dp))
                         Text(s.title, color = Color.White, fontSize = 13.sp, maxLines = 1)
                         Text(s.artist, color = TextSecondary, fontSize = 11.sp, maxLines = 1)
