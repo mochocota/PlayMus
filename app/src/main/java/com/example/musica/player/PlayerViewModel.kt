@@ -17,6 +17,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.example.musica.data.DEMO_URL
 import com.example.musica.data.DownloadRepository
+import com.example.musica.data.HistoryRepository
 import com.example.musica.data.MusicRepository
 import com.example.musica.data.PlayStatsRepository
 import com.example.musica.data.Song
@@ -76,12 +77,15 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         private set
 
     // ---------- Sleep Timer ----------
-    // millisRemaining = 0 → sin temporizador activo
     var sleepTimerRemaining by mutableStateOf(0L)
         private set
     var sleepTimerEndOfSong by mutableStateOf(false)
         private set
     private var sleepJob: Job? = null
+
+    // ---------- Cola real (para la pantalla "En cola") ----------
+    val queue: List<Song> get() = currentList
+    val queuePosition: Int get() = currentList.indexOfFirst { it.id == current?.id }
 
     // Los listeners se declaran ANTES del bloque init
     private val sessionListener = object : SessionManagerListener<CastSession> {
@@ -267,6 +271,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         currentList = list
         current = song
         PlayStatsRepository.increment(song.id)
+        HistoryRepository.add(song.id)
         if (casting) {
             sendToCast(song, list)
         } else if (controller == null) {
@@ -304,6 +309,15 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             .setUri(uri)
             .setMediaMetadata(metadata)
             .build()
+    }
+
+    // Saltar a una posición concreta de la cola
+    fun jumpTo(index: Int) {
+        val c = controller ?: return
+        if (index in 0 until c.mediaItemCount) {
+            c.seekTo(index, 0L)
+            c.play()
+        }
     }
 
     // ---------- Controles ----------
@@ -357,8 +371,6 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     // ============================================================
     // SLEEP TIMER
     // ============================================================
-
-    // Inicia la cuenta regresiva (minutos). Si ya había una, la reemplaza.
     fun startSleepTimer(minutes: Int) {
         cancelSleepTimer()
         sleepTimerEndOfSong = false
@@ -373,19 +385,16 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                 sleepTimerRemaining = left
             }
             if (isActive && sleepTimerRemaining <= 0) {
-                // Pausa suave: no cancela la cola, solo detiene el audio
                 pauseForSleep()
             }
         }
     }
 
-    // Detiene al final de la canción actual
     fun sleepAtEndOfSong() {
         cancelSleepTimer()
         sleepTimerEndOfSong = true
         val c = controller
         if (casting) {
-            // En cast no hay callback sencillo: temporizador aproximado
             val left = (duration - position).coerceAtLeast(0L)
             sleepTimerRemaining = left
             sleepJob = viewModelScope.launch {
