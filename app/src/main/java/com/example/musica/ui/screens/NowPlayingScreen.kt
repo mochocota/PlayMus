@@ -761,3 +761,135 @@ private fun SyncedLyrics(
         }
     }
 }
+// ============================================================
+// Diálogo del ecualizador
+// ============================================================
+@Composable
+private fun EqualizerDialog(onDismiss: () -> Unit) {
+    val available = EqualizerManager.available
+    val bandCount = if (available) EqualizerManager.bandCount().coerceAtLeast(1) else 5
+    val range = EqualizerManager.bandRange()
+
+    var enabled by remember { mutableStateOf(EqualizerManager.isEnabled()) }
+    var preset by remember { mutableStateOf(EqualizerManager.currentPreset()) }
+    var levels by remember {
+        mutableStateOf((0 until bandCount).map { EqualizerManager.bandLevel(it) })
+    }
+    var bass by remember { mutableStateOf(EqualizerManager.bassStrength()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = CardDark,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Ecualizador", color = Color.White,
+                    fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = { enabled = it; EqualizerManager.setEnabled(it) },
+                    colors = SwitchDefaults.colors(checkedTrackColor = Purple)
+                )
+            }
+        },
+        text = {
+            if (!available) {
+                Text(
+                    "El ecualizador no está disponible en este dispositivo (o aún no hay sesión de audio activa).\n\nReproduce una canción y abre el ecualizador de nuevo.",
+                    color = TextSecondary, fontSize = 13.sp, lineHeight = 18.sp
+                )
+            } else {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+
+                    Text("Presets", color = TextSecondary, fontSize = 12.sp)
+                    Spacer(Modifier.height(6.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.horizontalScroll(rememberScrollState())
+                    ) {
+                        (0 until EqualizerManager.presetCount()).forEach { i ->
+                            val selected = preset == i
+                            Box(
+                                Modifier
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(if (selected) Purple else CardLighter)
+                                    .clickable {
+                                        EqualizerManager.usePreset(i)
+                                        preset = i
+                                        levels = (0 until bandCount)
+                                            .map { EqualizerManager.bandLevel(it) }
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Text(EqualizerManager.presetName(i),
+                                    color = Color.White, fontSize = 11.sp, maxLines = 1)
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+
+                    levels.forEachIndexed { i, lvl ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(formatFreq(EqualizerManager.bandFreq(i)),
+                                color = TextSecondary, fontSize = 11.sp,
+                                modifier = Modifier.width(52.dp))
+                            Slider(
+                                value = lvl.toFloat(),
+                                onValueChange = { v ->
+                                    val nv = v.toInt()
+                                    levels = levels.toMutableList().also { l -> l[i] = nv }
+                                    preset = -1
+                                    EqualizerManager.setBandLevel(i, nv)
+                                },
+                                valueRange = range[0].toFloat()..range[1].toFloat(),
+                                colors = SliderDefaults.colors(
+                                    thumbColor = Color.White,
+                                    activeTrackColor = Purple,
+                                    inactiveTrackColor = TrackColor
+                                ),
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(dbLabel(lvl), color = TextSecondary, fontSize = 11.sp,
+                                modifier = Modifier.width(44.dp), textAlign = TextAlign.End)
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Bass", color = TextSecondary, fontSize = 11.sp,
+                            modifier = Modifier.width(52.dp))
+                        Slider(
+                            value = bass.toFloat(),
+                            onValueChange = { v ->
+                                bass = v.toInt()
+                                EqualizerManager.setBassStrength(v.toInt())
+                            },
+                            valueRange = 0f..1000f,
+                            colors = SliderDefaults.colors(
+                                thumbColor = Color.White,
+                                activeTrackColor = Pink,
+                                inactiveTrackColor = TrackColor
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text("${(bass * 100) / 1000}%",
+                            color = TextSecondary, fontSize = 11.sp,
+                            modifier = Modifier.width(44.dp), textAlign = TextAlign.End)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Cerrar", color = Purple) }
+        }
+    )
+}
+
+private fun formatFreq(milliHz: Int): String =
+    if (milliHz >= 1_000_000) "%.1fk".format(milliHz / 1_000_000f)
+    else "${milliHz / 1000}"
+
+private fun dbLabel(milliBel: Int): String {
+    val db = milliBel / 100
+    return if (db > 0) "+$db" else "$db"
+}
