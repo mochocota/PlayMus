@@ -98,6 +98,105 @@ object MusicRepository {
         }
         save()
     }
+    // ============================================================
+    // DUPLICADOS
+    // ============================================================
+
+    // Normaliza: minúsculas, sin acentos, sin (paréntesis), sin "feat."
+    private fun songKey(s: String): String {
+        val noExtras = s
+            .replace(Regex("\\(.*?\\)"), " ")
+            .replace(Regex("\\[.*?\\]"), " ")
+            .replace(Regex("\\b(ft|feat|featuring|con)\\..*$", RegexOption.IGNORE_CASE), " ")
+        return norm(noExtras).replace(Regex("[^a-z0-9 ]"), "")
+            .replace(Regex("\\s+"), " ").trim()
+    }
+
+    // Clave de agrupación rápida: canción + artista
+    private fun dedupeKey(s: Song): String {
+        val artistKey = if (s.artist.isBlank() || s.artist == "Desconocido") ""
+        else songKey(s.artist)
+        return songKey(s.title) + "|" + artistKey
+    }
+
+    // ¿La canción "s" coincide con (title/artist/durationSec)?
+    // Título igual y (artista igual o duración ±2s)
+    private fun matchesSong(s: Song, title: String, artist: String, durationSec: Int): Boolean {
+        val t = songKey(s.title)
+        if (t.isEmpty() || t != songKey(title)) return false
+        val sArtist = songKey(s.artist)
+        val oArtist = songKey(artist)
+        if (sArtist.isNotBlank() && oArtist.isNotBlank() && sArtist == oArtist) return true
+        if (s.durationSec > 0 && durationSec > 0 &&
+            abs(s.durationSec - durationSec) <= 2
+        ) return true
+        return false
+    }
+
+    // ¿Son "la misma canción"? (Song vs Song)
+    private fun sameSong(a: Song, b: Song): Boolean {
+        if (a.id == b.id) return false
+        return matchesSong(a, b.title, b.artist, b.durationSec)
+    }
+
+    // Cuenta copias redundantes
+    fun countDuplicates(): Int {
+        val groups = _songs.value.groupBy { dedupeKey(it) }.filter { it.key.isNotBlank() }
+        var extra = 0
+        groups.forEach { (_, list) ->
+            if (list.size > 1) {
+                val kept = mutableListOf<Song>(list.first())
+                for (i in 1 until list.size) {
+                    val s = list[i]
+                    if (kept.any { sameSong(it, s) }) extra++ else kept.add(s)
+                }
+            }
+        }
+        return extra
+    }
+
+    // Puntúa una copia para decidir cuál conservar (más puntos = mejor)
+    private fun songScore(s: Song): Int {
+        var p = 0
+        if (DownloadRepository.isDownloaded(s.id)) p += 100
+        if (s.coverPath.isNotBlank()) p += 50
+        if (FavoritesRepository.isFavorite(s.id)) p += 25
+        if (s.metaDone) p += 10
+        if (s.genre != "Otros") p += 5
+        if (s.album.isNotBlank()) p += 3
+        return p
+    }
+
+    // Elimina las copias redundantes conservando la mejor de cada grupo
+    fun removeDuplicates(): Int {
+        val groups = _songs.value.groupBy { dedupeKey(it) }.filter { it.key.isNotBlank() }
+        val toRemove = mutableListOf<Song>()
+        groups.forEach { (_, list) ->
+            if (list.size > 1) {
+                val kept = mutableListOf<Song>(list.first())
+                for (i in 1 until list.size) {
+                    val s = list[i]
+                    val dupe = kept.firstOrNull { sameSong(it, s) }
+                    if (dupe != null) {
+                        if (songScore(s) > songScore(dupe)) {
+                            toRemove.add(dupe)
+                            kept.remove(dupe)
+                            kept.add(s)
+                        } else {
+                            toRemove.add(s)
+                        }
+                    } else {
+                        kept.add(s)
+                    }
+                }
+            }
+        }
+        if (toRemove.isEmpty()) return 0
+        val removeIds = toRemove.map { it.id }.toSet()
+        _songs.value = _songs.value.filterNot { it.id in removeIds }
+        save()
+        return toRemove.size
+    }
 
     private fun loadSeedCatalog() {
         try {
