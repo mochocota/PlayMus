@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -12,6 +13,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -65,7 +68,16 @@ fun HomeScreen(nav: NavHostController, vm: PlayerViewModel) {
         Text("Inicio", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(20.dp))
 
+        // ---------- Banner (mismo estilo que Explorar) ----------
+        Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+            .background(Brush.horizontalGradient(listOf(Color(0xFF5B21B6), Color(0xFFBE185D))))
+            .padding(18.dp)) {
+            Text("Dale play a tu día 😃", color = Color.White,
+                fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        }
+
         // ---------- Escuchado recientemente ----------
+        Spacer(Modifier.height(22.dp))
         Text("Escuchado recientemente", color = Color.White, fontSize = 16.sp,
             fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(4.dp))
