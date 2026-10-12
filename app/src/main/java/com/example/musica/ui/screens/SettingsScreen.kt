@@ -12,12 +12,13 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.IosShare
 import androidx.compose.material.icons.filled.VpnKey
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -81,6 +82,10 @@ fun SettingsScreen(nav: NavHostController) {
     var sharing by remember { mutableStateOf(false) }
     var shareMsg by remember { mutableStateOf("") }
 
+    // ---------- Duplicados ----------
+    var showDupes by remember { mutableStateOf(false) }
+    var dupeCount by remember { mutableStateOf(0) }
+
     // Modo offline real (persistente)
     var offline by remember { mutableStateOf(DownloadRepository.isOffline()) }
     val dlCount = DownloadRepository.downloadedCount()
@@ -115,7 +120,16 @@ fun SettingsScreen(nav: NavHostController) {
         }
         Spacer(Modifier.height(8.dp))
 
-        // ---------- MODO OFFLINE (real) ----------
+        // ---------- Limpiar duplicados ----------
+        SettingRow(
+            Icons.Filled.CleaningServices, "Limpiar duplicados", null,
+            onClick = { dupeCount = MusicRepository.countDuplicates(); showDupes = true }
+        ) {
+            Icon(Icons.Filled.ChevronRight, null, tint = TextSecondary)
+        }
+        Spacer(Modifier.height(8.dp))
+
+        // ---------- Modo offline (real) ----------
         SettingRow(
             Icons.Filled.CloudOff, "Modo offline",
             if (offline) "ON · $dlCount descargas" else "OFF"
@@ -213,5 +227,40 @@ fun SettingsScreen(nav: NavHostController) {
                 Text("Melodix", color = TextSecondary, fontSize = 12.sp, letterSpacing = 1.sp)
             }
         }
+    }
+
+    // ---------- Confirmación de duplicados ----------
+    if (showDupes) {
+        AlertDialog(
+            onDismissRequest = { showDupes = false },
+            containerColor = CardDark,
+            title = { Text("Limpiar duplicados", color = Color.White, fontWeight = FontWeight.Bold) },
+            text = {
+                if (dupeCount == 0) {
+                    Text("No se encontraron duplicados.\n\nTu biblioteca está limpia ✓",
+                        color = TextSecondary, fontSize = 14.sp)
+                } else {
+                    Text(
+                        "Se encontraron $dupeCount canciones repetidas.\n\n" +
+                        "Se conservará la mejor copia de cada una (prioridad: descargada > con carátula > favorita).\n\n" +
+                        "Favoritos y listas NO se pierden.",
+                        color = TextSecondary, fontSize = 14.sp
+                    )
+                }
+            },
+            confirmButton = {
+                if (dupeCount > 0) {
+                    TextButton(onClick = {
+                        val removed = MusicRepository.removeDuplicates()
+                        showDupes = false
+                    }) { Text("Limpiar", color = Pink) }
+                } else {
+                    TextButton(onClick = { showDupes = false }) { Text("Cerrar", color = Purple) }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDupes = false }) { Text("Cerrar", color = Purple) }
+            }
+        )
     }
 }
