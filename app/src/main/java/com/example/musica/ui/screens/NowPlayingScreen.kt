@@ -179,11 +179,17 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
 
                     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                         val fresh = MusicRepository.songs.value.firstOrNull { it.id == song.id } ?: song
-                        CoverImage(fresh, Modifier.fillMaxWidth().aspectRatio(1f),
-                            corner = 20.dp, sample = 1)
-                        Spacer(Modifier.height(20.dp))
 
+                        // ---------- Fila título: Sleep · Título · Descarga · Letra · Corazón ----------
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+
+                            // Sleep Timer (lado izquierdo)
+                            IconButton(onClick = { showSleep = true }) {
+                                Icon(Icons.Filled.NightsStay, "Temporizador de sueño",
+                                    tint = if (vm.sleepTimerRemaining > 0 || vm.sleepTimerEndOfSong)
+                                        Cyan else Color.White)
+                            }
+
                             Column(Modifier.weight(1f)) {
                                 Text(song.title, color = Color.White, fontSize = 20.sp,
                                     fontWeight = FontWeight.Bold, maxLines = 1)
@@ -191,7 +197,7 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                                     color = TextSecondary, fontSize = 13.sp, maxLines = 1)
                             }
 
-                            // ---------- Descarga ----------
+                            // Descarga
                             IconButton(onClick = {
                                 when {
                                     isDownloaded -> showDeleteDl = true
@@ -222,7 +228,13 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                                 }
                             }
 
-                            // ---------- Favorito ----------
+                            // Letra (entre descarga y corazón)
+                            IconButton(onClick = { showLyrics = true }) {
+                                Icon(Icons.Filled.Lyrics, "Ver letra",
+                                    tint = Color.White)
+                            }
+
+                            // Corazón (favorito)
                             IconButton(onClick = {
                                 val nowFav = FavoritesRepository.toggle(song.id)
                                 favMsg = if (nowFav) "Agregado a favoritos" else "Eliminado de favoritos"
@@ -233,6 +245,53 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                             }
                         }
                         Spacer(Modifier.height(8.dp))
+
+                        // ---------- Carátula (tamaño original) con Cast overlay ----------
+                        Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
+                            CoverImage(fresh, Modifier.fillMaxWidth().aspectRatio(1f),
+                                corner = 20.dp, sample = 1)
+
+                            // Cast dentro de la carátula, arriba a la derecha
+                            Box(
+                                Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(10.dp)
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Black.copy(alpha = 0.55f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (castUsable) {
+                                    AndroidView(
+                                        modifier = Modifier.size(30.dp),
+                                        factory = { ctx ->
+                                            try {
+                                                val themed = ContextThemeWrapper(
+                                                    ctx,
+                                                    androidx.appcompat.R.style.Theme_AppCompat_NoActionBar
+                                                )
+                                                MediaRouteButton(themed).apply {
+                                                    CastButtonFactory.setUpMediaRouteButton(ctx, this)
+                                                    visibility = android.view.View.VISIBLE
+                                                }
+                                            } catch (_: Exception) {
+                                                android.view.View(ctx)
+                                            }
+                                        }
+                                    )
+                                } else {
+                                    IconButton(onClick = {
+                                        Toast.makeText(context,
+                                            "Cast no disponible en este dispositivo",
+                                            Toast.LENGTH_SHORT).show()
+                                    }) {
+                                        Icon(Icons.Filled.Cast, "Cast", tint = Color.White,
+                                            modifier = Modifier.size(20.dp))
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(16.dp))
 
                         val rawProgress = if (dragging) dragValue
                         else if (vm.duration > 0) vm.position.toFloat() / vm.duration else 0f
@@ -284,122 +343,44 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
 
                     Spacer(Modifier.weight(1f))
 
-                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    // ---------- Los 4 restantes, ordenados ----------
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically) {
 
-                        // ---------- Nivel 1: funciones ----------
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly,
-                            verticalAlignment = Alignment.CenterVertically) {
-
-                            // Cast
-                            if (castUsable) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally,
-                                    modifier = Modifier.width(60.dp)) {
-                                    Box(Modifier.size(30.dp), contentAlignment = Alignment.Center) {
-                                        AndroidView(
-                                            modifier = Modifier.fillMaxSize(),
-                                            factory = { ctx ->
-                                                try {
-                                                    val themed = ContextThemeWrapper(
-                                                        ctx,
-                                                        androidx.appcompat.R.style.Theme_AppCompat_NoActionBar
-                                                    )
-                                                    MediaRouteButton(themed).apply {
-                                                        CastButtonFactory.setUpMediaRouteButton(ctx, this)
-                                                        visibility = android.view.View.VISIBLE
-                                                    }
-                                                } catch (_: Exception) {
-                                                    android.view.View(ctx)
-                                                }
-                                            }
-                                        )
-                                    }
-                                    Text("Cast", color = TextSecondary, fontSize = 9.sp)
-                                }
-                            } else {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally,
-                                    modifier = Modifier.width(60.dp)
-                                        .clickable {
-                                            Toast.makeText(context,
-                                                "Cast no disponible en este dispositivo",
-                                                Toast.LENGTH_SHORT).show()
-                                        }) {
-                                    Icon(Icons.Filled.Cast, null, tint = Color.White,
-                                        modifier = Modifier.size(22.dp))
-                                    Text("Cast", color = TextSecondary, fontSize = 9.sp)
-                                }
-                            }
-
-                            // Letra
-                            Column(horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier.width(60.dp)
-                                    .clickable { showLyrics = true }) {
-                                Icon(Icons.Filled.Lyrics, null, tint = Color.White,
-                                    modifier = Modifier.size(22.dp))
-                                Text("Letra", color = TextSecondary, fontSize = 9.sp)
-                            }
-
-                            // Ecualizador
-                            Column(horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier.width(60.dp)
-                                    .clickable { showEq = true }) {
-                                Icon(Icons.Filled.Equalizer, null, tint = Color.White,
-                                    modifier = Modifier.size(22.dp))
-                                Text("Ecualizador", color = TextSecondary, fontSize = 9.sp)
-                            }
-
-                            // Sleep Timer
-                            Column(horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier.width(60.dp)
-                                    .clickable { showSleep = true }) {
-                                Icon(Icons.Filled.NightsStay, null,
-                                    tint = if (vm.sleepTimerRemaining > 0 || vm.sleepTimerEndOfSong)
-                                        Cyan else Color.White,
-                                    modifier = Modifier.size(22.dp))
-                                Text("Sleep", color = TextSecondary, fontSize = 9.sp)
-                            }
+                        // Ecualizador
+                        Column(horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.width(70.dp)
+                                .clickable { showEq = true }) {
+                            Icon(Icons.Filled.Equalizer, null, tint = Color.White,
+                                modifier = Modifier.size(22.dp))
+                            Text("Ecualizador", color = TextSecondary, fontSize = 9.sp)
                         }
 
-                        Spacer(Modifier.height(10.dp))
-                        Box(Modifier.fillMaxWidth().height(1.dp)
-                            .background(TextSecondary.copy(alpha = 0.15f)))
-                        Spacer(Modifier.height(10.dp))
-
-                        // ---------- Nivel 2: navegación ----------
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly,
-                            verticalAlignment = Alignment.CenterVertically) {
-
-                            // Historial
-                            Column(horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier.width(60.dp)
-                                    .clickable { nav.navigate("history") }) {
-                                Icon(Icons.Filled.History, null, tint = Color.White,
-                                    modifier = Modifier.size(22.dp))
-                                Text("Historial", color = TextSecondary, fontSize = 9.sp)
-                            }
-
-                            // Añadir a lista
-                            Column(horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier.width(60.dp)
-                                    .clickable { songToAdd = song }) {
-                                Icon(Icons.Filled.PlaylistAdd, null, tint = Color.White,
-                                    modifier = Modifier.size(22.dp))
-                                Text("A lista", color = TextSecondary, fontSize = 9.sp)
-                            }
-
-                            // Cola
-                            Column(horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier.width(60.dp)
-                                    .clickable { nav.navigate("queue") }) {
-                                Icon(Icons.AutoMirrored.Filled.QueueMusic, null, tint = Color.White,
-                                    modifier = Modifier.size(22.dp))
-                                Text("Cola", color = TextSecondary, fontSize = 9.sp)
-                            }
+                        // Historial
+                        Column(horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.width(70.dp)
+                                .clickable { nav.navigate("history") }) {
+                            Icon(Icons.Filled.History, null, tint = Color.White,
+                                modifier = Modifier.size(22.dp))
+                            Text("Historial", color = TextSecondary, fontSize = 9.sp)
                         }
 
-                        Spacer(Modifier.height(8.dp))
-                        Box(Modifier.clip(RoundedCornerShape(20.dp)).background(CardLighter)
-                            .padding(horizontal = 14.dp, vertical = 6.dp)) {
-                            Text("Alta calidad", color = Cyan, fontSize = 12.sp)
+                        // Añadir a lista
+                        Column(horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.width(70.dp)
+                                .clickable { songToAdd = song }) {
+                            Icon(Icons.Filled.PlaylistAdd, null, tint = Color.White,
+                                modifier = Modifier.size(22.dp))
+                            Text("A lista", color = TextSecondary, fontSize = 9.sp)
+                        }
+
+                        // Cola
+                        Column(horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.width(70.dp)
+                                .clickable { nav.navigate("queue") }) {
+                            Icon(Icons.AutoMirrored.Filled.QueueMusic, null, tint = Color.White,
+                                modifier = Modifier.size(22.dp))
+                            Text("Cola", color = TextSecondary, fontSize = 9.sp)
                         }
                     }
                     Spacer(Modifier.height(14.dp))
