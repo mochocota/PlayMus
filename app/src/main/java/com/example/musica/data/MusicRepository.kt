@@ -849,21 +849,30 @@ object MusicRepository {
 
     private fun file() = File(context.filesDir, "library.json")
 
+        // Escritura en segundo plano: con miles de canciones el JSON es
+    // grande y escribirlo en el hilo principal causaría tirones
+    private val saveExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+
     private fun save() {
         try {
-            val arr = JSONArray()
-            _songs.value.forEach { s ->
-                arr.put(
-                    JSONObject()
-                        .put("id", s.id).put("title", s.title).put("artist", s.artist)
-                        .put("album", s.album).put("durationSec", s.durationSec)
-                        .put("fileId", s.fileId).put("genre", s.genre)
-                        .put("fromTelegram", s.fromTelegram).put("scanned", s.scanned)
-                        .put("coverPath", s.coverPath).put("metaDone", s.metaDone)
-                        .put("caption", s.caption).put("fileName", s.fileName)
-                )
+            val snapshot = _songs.value.toList()
+            saveExecutor.execute {
+                try {
+                    val arr = JSONArray()
+                    snapshot.forEach { s ->
+                        arr.put(
+                            JSONObject()
+                                .put("id", s.id).put("title", s.title).put("artist", s.artist)
+                                .put("album", s.album).put("durationSec", s.durationSec)
+                                .put("fileId", s.fileId).put("genre", s.genre)
+                                .put("fromTelegram", s.fromTelegram).put("scanned", s.scanned)
+                                .put("coverPath", s.coverPath).put("metaDone", s.metaDone)
+                                .put("caption", s.caption).put("fileName", s.fileName)
+                        )
+                    }
+                    file().writeText(arr.toString())
+                } catch (_: Exception) {}
             }
-            file().writeText(arr.toString())
         } catch (_: Exception) {}
     }
 
