@@ -3,6 +3,8 @@ package com.example.musica.ui.components
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -16,7 +18,9 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -29,14 +33,20 @@ import com.example.musica.data.DownloadRepository
 import com.example.musica.data.Song
 import com.example.musica.ui.theme.GradientBrush
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.runtime.rememberCoroutineScope
 import java.io.File
 
-// Caché LRU en memoria (~32 MB) de carátulas decodificadas
-private val bitmapCache = object : LruCache<String, Bitmap>(32 * 1024 * 1024) {
+// Caché LRU en memoria: guarda carátulas ya decodificadas.
+// Con RGB_565 cada imagen ocupa ~la mitad, así que caben muchas
+// más antes de empezar a reciclar (menos re-lecturas de disco).
+private val bitmapCache = object : LruCache<String, Bitmap>(24 * 1024 * 1024) {
     override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
 }
 
+// Decodifica a un tamaño adaptado a las cuadrículas (~130dp):
+// 384px por lado es más que suficiente y muy ligero.
 private fun decodeSampled(path: String, target: Int): Bitmap? {
     return try {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -49,15 +59,21 @@ private fun decodeSampled(path: String, target: Int): Bitmap? {
         }
         BitmapFactory.decodeFile(
             path,
-            BitmapFactory.Options().apply { inSampleSize = sample }
+            BitmapFactory.Options().apply {
+                inSampleSize = sample
+                inPreferredConfig = Bitmap.Config.RGB_565
+            }
         )
     } catch (_: Throwable) {
         null
     }
 }
 
-// Carátula con carga en segundo plano (scroll fluido) y,
-// opcionalmente, insignia de "disponible offline" (offlineBadge).
+// Carátula con carga fluida:
+// 1) Lectura SINCRÓNICA de la caché: si ya fue decodificada, aparece
+//    en el PRIMER frame (sin flash de degradado al reciclar celdas).
+// 2) Si no está, se decodifica en segundo plano y se funde suavemente.
+// 3) Insignia opcional de "disponible offline".
 @Composable
 fun CoverImage(
     song: Song?,
@@ -67,37 +83,51 @@ fun CoverImage(
     offlineBadge: Boolean = false
 ) {
     val path = song?.coverPath
+    val scope = rememberCoroutineScope()
 
-    val bmp by produceState<Bitmap?>(initialValue = null, path) {
-        if (path.isNullOrBlank()) {
-            value = null
-            return@produceState
+    // Lectura sincrónica de caché en la primera composición:
+    // elimina el flash en celdas recicladas
+    var bmp by remember(path) {
+        mutableStateOf(if (path.isNullOrBlank()) null else bitmapCache.get(path))
+    }
+
+    // Solo si NO estaba en caché: decodifica en segundo plano
+    if (bmp == null && !path.isNullOrBlank()) {
+        LaunchedEffect(path) {
+            val decoded = withContext(Dispatchers.IO) { decodeSampled(path, 384) }
+            if (decoded != null) bitmapCache.put(path, decoded)
+            bmp = decoded
         }
-        value = bitmapCache.get(path)
-        if (value != null) return@produceState
-        val decoded = withContext(Dispatchers.IO) { decodeSampled(path, 512) }
-        if (decoded != null) bitmapCache.put(path, decoded)
-        value = decoded
     }
 
     Box(modifier) {
-        if (bmp != null) {
-            Image(
-                bitmap = bmp!!.asImageBitmap(),
-                contentDescription = null,
-                modifier = Modifier.matchParentSize().clip(RoundedCornerShape(corner)),
-                contentScale = ContentScale.Crop
-            )
-        } else {
-            Box(
-                Modifier.matchParentSize().clip(RoundedCornerShape(corner))
-                    .background(GradientBrush),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Filled.MusicNote, null,
-                    tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(28.dp)
+        // Fundido suave entre placeholder e imagen (180 ms)
+        Crossfade(
+            targetState = bmp != null,
+            animationSpec = tween(180),
+            label = "coverFade"
+        ) { hasImage ->
+            if (hasImage && bmp != null) {
+                Image(
+                    bitmap = bmp!!.asImageBitmap(),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .matchParentSize()
+                        .clip(RoundedCornerShape(corner)),
+                    contentScale = ContentScale.Crop
                 )
+            } else {
+                Box(
+                    Modifier.matchParentSize().clip(RoundedCornerShape(corner))
+                        .background(GradientBrush),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Filled.MusicNote, null,
+                        tint = Color.White.copy(alpha = 0.85f),
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
             }
         }
         // Insignia: esta canción está descargada (funciona sin internet)
