@@ -25,6 +25,7 @@ import com.example.musica.data.MusicRepository
 import com.example.musica.data.PlayStatsRepository
 import com.example.musica.player.PlayerViewModel
 import com.example.musica.ui.components.CoverImage
+import com.example.musica.ui.theme.Cyan
 import com.example.musica.ui.theme.NavyBg
 import com.example.musica.ui.theme.TextSecondary
 
