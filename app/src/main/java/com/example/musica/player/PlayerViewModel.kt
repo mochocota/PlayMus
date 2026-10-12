@@ -174,12 +174,13 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // Construye el MediaInfo con la URL pública real (para que la bocina la descargue)
+    // Construye el MediaInfo con la URL pública real (para que la bocina la descargue).
+    // Usa el caché de URLs: si la canción sonó hace poco, la respuesta es instantánea.
     private fun buildCastMediaInfo(s: Song): MediaInfo {
         val url = if (s.fromTelegram && s.fileId.isNotEmpty()) {
             try {
-                val client = TelegramClient(TelegramConfig.token(getApplication()))
-                client.fileUrl(client.getFilePath(s.fileId))
+                TelegramClient(TelegramConfig.token(getApplication()))
+                    .resolveFileUrl(s.fileId)
             } catch (_: Exception) { DEMO_URL }
         } else {
             s.url.ifBlank { DEMO_URL }
