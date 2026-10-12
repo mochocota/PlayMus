@@ -20,7 +20,7 @@ object TelegramConfig {
     // 👇👇 IMPORTACIÓN AUTOMÁTICA ENTRE DISPOSITIVOS 👇👇
     // (file_id del melodix_import.json que el bot te envía)
     // ============================================================
-    const val DEFAULT_IMPORT_FILE_ID = "BQACAgEAAxkBAAICcGrMOjMrC65V42osEiXxifXLUH0oAAJpCAACzSZgRmPZnwqen3C7PQQ"
+    const val DEFAULT_IMPORT_FILE_ID = "d87e7389d5e2326d4537a4b403b90d8a"
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
