@@ -99,24 +99,105 @@ object MusicRepository {
         save()
     }
 
-    private fun loadSeedCatalog() {
-        try {
-            val resId = context.resources.getIdentifier(
-                "seed_catalog", "raw", context.packageName
-            )
-            if (resId == 0) return
-            val body = context.resources.openRawResource(resId)
-                .bufferedReader().use { it.readText() }
-            val list = _songs.value.toMutableList()
-            val known = list.map { it.fileId }.toMutableSet()
-            val n = parseAndMerge(body, list, known)
-            if (n > 0) {
-                _songs.value = list
-                save()
-            }
-        } catch (_: Throwable) {}
+    // ============================================================
+    // DUPLICADOS
+    // ============================================================
+
+    // Normaliza un texto para comparar canciones: minúsculas, sin
+    // acentos, sin paréntesis/corchetes, sin "feat.", sin espacios extra
+    private fun songKey(s: String): String {
+        val noExtras = s
+            .replace(Regex("\\(.*?\\)"), " ")
+            .replace(Regex("\\[.*?\\]"), " ")
+            .replace(Regex("\\b(ft|feat|featuring|con)\\..*$", RegexOption.IGNORE_CASE), " ")
+        return norm(noExtras).replace(Regex("[^a-z0-9 ]"), "").replace(Regex("\\s+"), " ").trim()
     }
 
+    // Clave de deduplicación: canción + artista (si el artista sirve)
+    private fun dedupeKey(s: Song): String {
+        val artist = s.artist
+        val artistKey = if (artist.isBlank() || artist == "Desconocido") ""
+        else songKey(artist)
+        return songKey(s.title) + "|" + artistKey
+    }
+
+    // ¿Son "la misma canción"? Título igual y (artista igual o duración ±2s)
+    private fun sameSong(a: Song, b: Song): Boolean {
+        if (a.id == b.id) return false
+        if (songKey(a.title) != songKey(b.title)) return false
+        val aArtist = songKey(a.artist)
+        val bArtist = songKey(b.artist)
+        val artistOk = aArtist.isNotBlank() && bArtist.isNotBlank() && aArtist == bArtist
+        val durationOk = a.durationSec in 1..0 ||
+                abs(a.durationSec - b.durationSec) <= 2
+        return artistOk || durationOk
+    }
+
+    // Cuenta cuántas copias redundantes hay (grupos con más de 1)
+    fun countDuplicates(): Int {
+        val groups = _songs.value.groupBy { dedupeKey(it) }.filter { it.key.isNotBlank() }
+        var extra = 0
+        groups.forEach { (_, list) ->
+            if (list.size > 1) {
+                // contar pares "reales" por si la clave agrupó de más
+                var kept = mutableListOf<Song>(list.first())
+                for (i in 1 until list.size) {
+                    val s = list[i]
+                    if (kept.none { sameSong(it, s) }) kept.add(s) else extra++
+                }
+            }
+        }
+        return extra
+    }
+
+    // Puntúa una copia para decidir cuál conservar (más puntos = mejor)
+    private fun songScore(s: Song): Int {
+        var p = 0
+        if (DownloadRepository.isDownloaded(s.id)) p += 100
+        if (s.coverPath.isNotBlank()) p += 50
+        if (FavoritesRepository.isFavorite(s.id)) p += 25
+        if (s.metaDone) p += 10
+        if (s.genre != "Otros") p += 5
+        if (s.album.isNotBlank()) p += 3
+        return p
+    }
+
+    // Elimina las copias redundantes conservando la mejor de cada grupo.
+    // Devuelve cuántas eliminó.
+    fun removeDuplicates(): Int {
+        val groups = _songs.value.groupBy { dedupeKey(it) }.filter { it.key.isNotBlank() }
+        val toRemove = mutableListOf<Song>()
+        groups.forEach { (_, list) ->
+            if (list.size > 1) {
+                var kept = mutableListOf<Song>(list.first())
+                for (i in 1 until list.size) {
+                    val s = list[i]
+                    val dupe = kept.firstOrNull { sameSong(it, s) }
+                    if (dupe != null) {
+                        // Conservar la de mayor puntuación
+                        if (songScore(s) > songScore(dupe)) {
+                            toRemove.add(dupe)
+                            kept.remove(dupe)
+                            kept.add(s)
+                        } else {
+                            toRemove.add(s)
+                        }
+                    } else {
+                        kept.add(s)
+                    }
+                }
+            }
+        }
+        if (toRemove.isEmpty()) return 0
+        val removeIds = toRemove.map { it.id }.toSet()
+        _songs.value = _songs.value.filterNot { it.id in removeIds }
+        save()
+        return toRemove.size
+    }
+
+    // ============================================================
+    // SINCRONIZACIÓN (con prevención de duplicados en la entrada)
+    // ============================================================
     suspend fun sync(): String {
         loadedGate.await()
         return mutex.withLock {
@@ -215,6 +296,7 @@ object MusicRepository {
 
                         if (a.fileSize > 19_500_000) { skipped++; continue }
 
+                        // ---------- REPARACIÓN DE FILE_ID ----------
                         val repairIdx = result.indexOfFirst { ex ->
                             ex.fileId != a.fileId && (
                                 (ex.title.equals(a.title, ignoreCase = true) &&
@@ -235,6 +317,24 @@ object MusicRepository {
                             )
                             known.add(a.fileId)
                             repaired++
+                            continue
+                        }
+
+                        // ---------- PREVENCIÓN DE DUPLICADOS ----------
+                        // Si ya existe "la misma canción" (título+artista/
+                        // duración), NO añadir otra copia: solo actualizar
+                        // metadatos de la existente
+                        val dupeIdx = result.indexOfFirst { ex -> sameSong(ex, a) }
+                        if (dupeIdx >= 0) {
+                            val old = result[dupeIdx]
+                            result[dupeIdx] = old.copy(
+                                caption = a.caption.ifBlank { old.caption },
+                                fileName = a.fileName.ifBlank { old.fileName },
+                                genre = if (old.genre == "Otros")
+                                    (detectGenre(a.caption, a.fileName, null) ?: "Otros")
+                                else old.genre
+                            )
+                            fixed++
                             continue
                         }
 
@@ -273,7 +373,7 @@ object MusicRepository {
                 val online = enrichLocked(limit = ONLINE_BATCH)
 
                 val sb = StringBuilder()
-                if (repaired > 0) sb.append("Reparadas: $repaired canciones")
+                if (repaired > 0) sb.append("Reparadas: $reparadas canciones")
                 if (imported > 0) {
                     if (sb.isNotEmpty()) sb.append(" · ")
                     sb.append("Importadas: $imported del historial")
@@ -336,20 +436,21 @@ object MusicRepository {
             if (fid.isBlank() || fid in known) continue
             val caption = o.optString("caption", "")
             val fileName = o.optString("fileName", "")
-            known.add(fid)
-            result.add(
-                0, Song(
-                    id = fid.hashCode(),
-                    title = o.optString("title", "Sin título").ifBlank { "Sin título" },
-                    artist = o.optString("artist", "Desconocido").ifBlank { "Desconocido" },
-                    album = o.optString("album", ""),
-                    durationSec = o.optInt("durationSec", 0),
-                    url = "", fileId = fid,
-                    genre = detectGenre(caption, fileName, null) ?: "Otros",
-                    fromTelegram = true,
-                    caption = caption, fileName = fileName
-                )
+            val cand = Song(
+                id = fid.hashCode(),
+                title = o.optString("title", "Sin título").ifBlank { "Sin título" },
+                artist = o.optString("artist", "Desconocido").ifBlank { "Desconocido" },
+                album = o.optString("album", ""),
+                durationSec = o.optInt("durationSec", 0),
+                url = "", fileId = fid,
+                genre = detectGenre(caption, fileName, null) ?: "Otros",
+                fromTelegram = true,
+                caption = caption, fileName = fileName
             )
+            // Prevenir duplicados también en importaciones
+            if (result.any { sameSong(it, cand) }) continue
+            known.add(fid)
+            result.add(0, cand)
             n++
         }
         return n
@@ -365,8 +466,6 @@ object MusicRepository {
         return mutex.withLock { enrichLocked(limit) }
     }
 
-    // ===== CONTINUA EN LA PARTE 2 (abajo, se pega después) =====
-        // ===== PARTE 2 =====
     private suspend fun scanLocked(limit: Int): Int = withContext(Dispatchers.IO) {
         val token = TelegramConfig.token(context)
         if (token.isBlank()) return@withContext 0
