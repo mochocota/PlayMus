@@ -5,6 +5,7 @@ import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.ConcurrentHashMap
 
 // ---------- Configuración guardada en el teléfono ----------
 object TelegramConfig {
@@ -17,29 +18,17 @@ object TelegramConfig {
 
     // ============================================================
     // 👇👇 IMPORTACIÓN AUTOMÁTICA ENTRE DISPOSITIVOS 👇👇
-    //
-    // Pega aquí el file_id de tu melodix_import.json y CUALQUIER
-    // dispositivo nuevo importará toda la biblioteca en su
-    // primera sincronización, sin volver a enviar nada.
-    //
-    // ¿De dónde saco el file_id? Cuando la app procesa el archivo
-    // de importación, el mensaje de estado de Biblioteca muestra:
-    //   "file_id: AQADBAAT..."
-    // Copia esa cadena completa y pégala aquí entre las comillas.
+    // (file_id del melodix_import.json que el bot te envía)
     // ============================================================
-    const val DEFAULT_IMPORT_FILE_ID = "CQACAgEAAyEGAAMBAozBXgACHdNqy0eiEK_CV1hrXMjCeQgXve8HmAAC3wkAAtTZKUbW7WojDK2hfh4E"
+    const val DEFAULT_IMPORT_FILE_ID = "BQACAgEAAxkBAAICcGrMOjMrC65V42osEiXxifXLUH0oAAJpCAACzSZgRmPZnwqen3C7PQQ"
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    // Devuelve el token guardado en el teléfono; si no hay,
-    // usa el integrado en el código (DEFAULT_BOT_TOKEN).
     fun token(ctx: Context): String {
         val saved = prefs(ctx).getString("token", "") ?: ""
         return saved.ifBlank { DEFAULT_BOT_TOKEN.trim() }
     }
 
-    // file_id del archivo de importación: primero se busca el
-    // guardado en este teléfono; si no hay, el integrado en el código
     fun autoImportFileId(ctx: Context): String {
         val saved = prefs(ctx).getString("auto_import_file_id", "") ?: ""
         return saved.ifBlank { DEFAULT_IMPORT_FILE_ID.trim() }
@@ -47,6 +36,12 @@ object TelegramConfig {
 
     fun saveAutoImportFileId(ctx: Context, fid: String) {
         prefs(ctx).edit().putString("auto_import_file_id", fid).apply()
+    }
+
+    fun importChatId(ctx: Context): Long = prefs(ctx).getLong("import_chat_id", 0L)
+
+    fun saveImportChatId(ctx: Context, chatId: Long) {
+        prefs(ctx).edit().putLong("import_chat_id", chatId).apply()
     }
 
     fun channel(ctx: Context): String = prefs(ctx).getString("channel", "") ?: ""
@@ -99,6 +94,10 @@ class TelegramClient(private val token: String) {
 
     fun getMe(): String = api("getMe", "{}").getJSONObject("result").optString("username")
 
+    fun sendMessage(chatId: Long, text: String) {
+        api("sendMessage", """{"chat_id":$chatId,"text":${JSONObject.quote(text)}}""")
+    }
+
     fun deleteWebhook() {
         try { api("deleteWebhook", "{}") } catch (_: Exception) {}
     }
@@ -120,7 +119,33 @@ class TelegramClient(private val token: String) {
 
     fun fileUrl(filePath: String): String = "https://api.telegram.org/file/bot$token/$filePath"
 
+    // ============================================================
+    // RESOLUCIÓN CON CACHÉ: convierte un file_id en URL directa
+    // de streaming. Las URLs de Telegram duran ~1 hora, así que
+    // cacheamos 45 minutos: si la misma canción vuelve a sonar
+    // pronto, no se vuelve a pedir a la API (arranque instantáneo).
+    // ============================================================
+    fun resolveFileUrl(fileId: String): String {
+        Companion.cachedUrl(fileId)?.let { return it }
+        val url = fileUrl(getFilePath(fileId))
+        Companion.putCachedUrl(fileId, url)
+        return url
+    }
+
     companion object {
+        private data class CachedUrl(val url: String, val at: Long)
+        private val urlCache = ConcurrentHashMap<String, CachedUrl>()
+        private const val CACHE_TTL_MS = 45L * 60 * 1000
+
+        private fun cachedUrl(fileId: String): String? {
+            val c = urlCache[fileId] ?: return null
+            return if (System.currentTimeMillis() - c.at < CACHE_TTL_MS) c.url else null
+        }
+
+        private fun putCachedUrl(fileId: String, url: String) {
+            urlCache[fileId] = CachedUrl(url, System.currentTimeMillis())
+        }
+
         // Extrae el audio de un "update" (publicación de canal o mensaje)
         fun extractAudio(update: JSONObject): TgAudio? {
             val msg = update.optJSONObject("channel_post")
