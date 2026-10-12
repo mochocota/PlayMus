@@ -39,11 +39,13 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
+import com.example.musica.data.DownloadRepository
 import com.example.musica.data.MusicRepository
 import com.example.musica.player.PlayerViewModel
 import com.example.musica.ui.components.CoverImage
 import com.example.musica.ui.components.MiniPlayer
 import com.example.musica.ui.theme.CardLighter
+import com.example.musica.ui.theme.Cyan
 import com.example.musica.ui.theme.NavyBg
 import com.example.musica.ui.theme.Purple
 import com.example.musica.ui.theme.TextSecondary
@@ -55,7 +57,12 @@ private fun norm(s: String): String =
 
 @Composable
 fun SearchScreen(nav: NavHostController, vm: PlayerViewModel) {
-    val songs by MusicRepository.songs.collectAsState()
+    val songsRaw by MusicRepository.songs.collectAsState()
+    val offline by DownloadRepository.offlineMode.collectAsState()
+    // En modo offline: solo las descargadas
+    val songs = if (offline) songsRaw.filter { DownloadRepository.isDownloaded(it.id) }
+    else songsRaw
+
     var query by rememberSaveable { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -94,9 +101,19 @@ fun SearchScreen(nav: NavHostController, vm: PlayerViewModel) {
             Spacer(Modifier.height(14.dp))
 
             if (songs.isEmpty()) {
-                Text("Tu biblioteca está vacía.\nSincroniza tu canal de Telegram primero.",
-                    color = TextSecondary, fontSize = 14.sp)
+                if (offline) {
+                    Text("Modo offline activo y sin descargas que coincidan.\nDesactívalo en Configuración para buscar en toda la biblioteca.",
+                        color = TextSecondary, fontSize = 14.sp)
+                } else {
+                    Text("Tu biblioteca está vacía.\nSincroniza tu canal de Telegram primero.",
+                        color = TextSecondary, fontSize = 14.sp)
+                }
             } else if (query.isBlank()) {
+                if (offline) {
+                    Text("✈️ Modo offline · buscando solo entre tus descargas.",
+                        color = Cyan, fontSize = 13.sp)
+                    Spacer(Modifier.height(6.dp))
+                }
                 Text("Busca por título, artista, álbum o género.",
                     color = TextSecondary, fontSize = 14.sp)
             } else {
@@ -149,7 +166,8 @@ fun SearchScreen(nav: NavHostController, vm: PlayerViewModel) {
                         items(results.size) { i ->
                             val s = results[i]
                             Column(Modifier.clickable { vm.play(s, results) }) {
-                                CoverImage(s, Modifier.fillMaxWidth().aspectRatio(1f), corner = 12.dp)
+                                CoverImage(s, Modifier.fillMaxWidth().aspectRatio(1f),
+                                    corner = 12.dp, offlineBadge = true)
                                 Spacer(Modifier.height(6.dp))
                                 Text(s.title, color = Color.White, fontSize = 12.sp,
                                     maxLines = 1, lineHeight = 14.sp)
