@@ -108,8 +108,7 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
 
     // ============================================================
     // BUCLE AUTOMÁTICO — arranca cuando la biblioteca cargó.
-    // Procesa metadatos, busca géneros online y revisa el canal
-    // cada varios ciclos por si hay canciones pendientes.
+    // En MODO OFFLINE no hace trabajo de red (solo espera).
     // ============================================================
     val ready by MusicRepository.ready.collectAsState()
     LaunchedEffect(ready) {
@@ -120,6 +119,11 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
         }
         var cycles = 0
         while (isActive) {
+            // Modo offline: sin trabajo de red mientras esté activo
+            if (DownloadRepository.offlineMode.value) {
+                delay(3000)
+                continue
+            }
             val meta = MusicRepository.pendingCount()
             val online = MusicRepository.pendingOnlineCount()
             when {
