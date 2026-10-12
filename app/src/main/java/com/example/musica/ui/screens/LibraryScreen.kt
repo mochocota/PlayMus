@@ -33,9 +33,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
+import com.example.musica.data.DownloadRepository
 import com.example.musica.data.MusicRepository
 import com.example.musica.data.PlaylistRepository
-import com.example.musica.data.playlists
 import com.example.musica.player.PlayerViewModel
 import com.example.musica.telegram.TelegramConfig
 import com.example.musica.ui.components.CoverImage
@@ -51,7 +51,11 @@ import kotlinx.coroutines.launch
 fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
     val scope = rememberCoroutineScope()
     val ctx = LocalContext.current
-    val songs by MusicRepository.songs.collectAsState()
+    val songsRaw by MusicRepository.songs.collectAsState()
+    val offline by DownloadRepository.offlineMode.collectAsState()
+    // En modo offline: solo las descargadas
+    val songs = if (offline) songsRaw.filter { DownloadRepository.isDownloaded(it.id) }
+    else songsRaw
     val userLists by PlaylistRepository.playlists.collectAsState()
     val ready by MusicRepository.ready.collectAsState()
     var syncing by remember { mutableStateOf(false) }
@@ -69,7 +73,6 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
 
     Column(Modifier.fillMaxSize().background(NavyBg)) {
 
-        // ---------- Parte superior (scrolleable) ----------
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp)) {
 
@@ -77,7 +80,7 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Biblioteca", color = Color.White, fontSize = 22.sp,
                     fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                IconButton(onClick = { doSync() }, enabled = !syncing) {
+                IconButton(onClick = { doSync() }, enabled = !syncing && !offline) {
                     if (syncing) CircularProgressIndicator(Modifier.size(18.dp),
                         strokeWidth = 2.dp, color = Purple)
                     else Icon(Icons.Filled.Refresh, null, tint = Color.White)
@@ -91,25 +94,30 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
             }
             Spacer(Modifier.height(10.dp))
 
-            if (status.isNotBlank()) {
-                Text(status, color = TextSecondary, fontSize = 12.sp)
-                Spacer(Modifier.height(8.dp))
-            }
-            val pending = MusicRepository.pendingCount()
-            if (pending > 0) {
-                Text("🔎 Procesando carátulas y géneros… faltan $pending canciones",
-                    color = Purple, fontSize = 12.sp)
-                Spacer(Modifier.height(8.dp))
-            }
-            val onlinePending = MusicRepository.pendingOnlineCount()
-            if (pending == 0 && onlinePending > 0) {
-                Text("🌐 Buscando géneros en internet… faltan $onlinePending canciones",
+            if (offline) {
+                Text("✈️ Modo offline · ${songs.size} descargadas",
                     color = Cyan, fontSize = 12.sp)
                 Spacer(Modifier.height(8.dp))
+            } else {
+                if (status.isNotBlank()) {
+                    Text(status, color = TextSecondary, fontSize = 12.sp)
+                    Spacer(Modifier.height(8.dp))
+                }
+                val pending = MusicRepository.pendingCount()
+                if (pending > 0) {
+                    Text("🔎 Procesando carátulas y géneros… faltan $pending canciones",
+                        color = Purple, fontSize = 12.sp)
+                    Spacer(Modifier.height(8.dp))
+                }
+                val onlinePending = MusicRepository.pendingOnlineCount()
+                if (pending == 0 && onlinePending > 0) {
+                    Text("🌐 Buscando géneros en internet… faltan $onlinePending canciones",
+                        color = Cyan, fontSize = 12.sp)
+                    Spacer(Modifier.height(8.dp))
+                }
             }
             Spacer(Modifier.height(4.dp))
 
-            // ---------- Acceso a las listas ----------
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(CardDark)
                 .clickable { nav.navigate("playlists") }
                 .padding(10.dp),
@@ -126,12 +134,16 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
             Spacer(Modifier.height(16.dp))
         }
 
-        // ---------- Cuadrícula de canciones (3 columnas) ----------
         if (songs.isEmpty()) {
             Box(Modifier.weight(1f).fillMaxWidth().padding(16.dp),
                 contentAlignment = Alignment.Center) {
                 if (!ready) {
                     CircularProgressIndicator(color = Purple)
+                } else if (offline) {
+                    Text(
+                        "Modo offline activo y sin descargas.\n\nDesactívalo en ⚙️ Configuración o descarga canciones con el botón ⬇️ del reproductor.",
+                        color = TextSecondary, fontSize = 14.sp
+                    )
                 } else {
                     Text(
                         "Tu biblioteca está vacía.\n\nSi el token está integrado en la app, la sincronización empieza sola; también puedes pulsar 🔄.",
@@ -150,7 +162,8 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
                 items(songs.size) { i ->
                     val s = songs[i]
                     Column(Modifier.clickable { vm.play(s, songs) }) {
-                        CoverImage(s, Modifier.fillMaxWidth().aspectRatio(1f), corner = 12.dp)
+                        CoverImage(s, Modifier.fillMaxWidth().aspectRatio(1f),
+                            corner = 12.dp, offlineBadge = true)
                         Spacer(Modifier.height(6.dp))
                         Text(s.title, color = Color.White, fontSize = 12.sp,
                             maxLines = 1, lineHeight = 14.sp)
