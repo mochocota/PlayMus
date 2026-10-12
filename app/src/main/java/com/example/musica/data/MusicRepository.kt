@@ -409,4 +409,326 @@ object MusicRepository {
         val candidates = _songs.value.filter { s ->
             s.fromTelegram && s.genre == "Otros" &&
                     (attempts[s.id] ?: 0) < MAX_ONLINE_ATTEMPTS &&
-                    s.title.isNotBlank() && s.title.length >=
+                    s.title.isNotBlank() && s.title.length >= 3
+        }.take(limit)
+        if (candidates.isEmpty()) return@withContext 0
+
+        val sem = Semaphore(ONLINE_PARALLEL)
+        val results = ConcurrentHashMap<Int, OnlineHit>()
+
+        val jobs = candidates.map { song ->
+            launch {
+                sem.withPermit {
+                    attempts[song.id] = (attempts[song.id] ?: 0) + 1
+                    val hit = lookupGenreOnline(song.title, song.artist)
+                    if (hit != null) results[song.id] = hit
+                }
+            }
+        }
+        jobs.joinAll()
+        saveAttempts()
+
+        if (results.isEmpty()) return@withContext 0
+        val got = results.size
+        _songs.value = _songs.value.map { s ->
+            val hit = results[s.id] ?: return@map s
+            var updated = s.copy(genre = hit.genre, scanned = true)
+            if ((s.artist.isBlank() || s.artist == "Desconocido") &&
+                !hit.artist.isNullOrBlank()) {
+                updated = updated.copy(artist = hit.artist)
+            }
+            if (s.album.isBlank() && !hit.album.isNullOrBlank()) {
+                updated = updated.copy(album = hit.album)
+            }
+            updated
+        }
+        save()
+        got
+    }
+
+    private fun cleanForSearch(raw: String): String = raw
+        .replace(Regex("\\(.*?\\)"), " ")
+        .replace(Regex("\\[.*?\\]"), " ")
+        .replace(Regex("\\b(official|video|audio|letra|lyrics|lyric|hd|hq|4k|remaster(ed)?|vizualizer|visualizer)\\b.*", RegexOption.IGNORE_CASE), " ")
+        .replace(Regex("\\b(ft|feat|featuring|con)\\..*$", RegexOption.IGNORE_CASE), " ")
+        .replace(Regex("\\s+"), " ").trim()
+
+    private fun lookupGenreOnline(titleRaw: String, artistRaw: String): OnlineHit? {
+        var title = cleanForSearch(titleRaw)
+        var artist = artistRaw.takeIf { it.isNotBlank() && it != "Desconocido" } ?: ""
+
+        if (artist.isBlank() && title.contains(" - ")) {
+            val parts = title.split(" - ", limit = 2)
+            if (parts.size == 2 && parts[0].isNotBlank()) {
+                artist = parts[0].trim()
+                title = parts[1].trim()
+            }
+        }
+        if (title.isBlank()) return null
+
+        try {
+            val term = listOf(artist, title).filter { it.isNotBlank() }.joinToString(" ")
+            val q = URLEncoder.encode(term, "UTF-8")
+            val conn = URL("https://itunes.apple.com/search?term=$q&entity=song&limit=3")
+                .openConnection() as HttpURLConnection
+            try {
+                conn.connectTimeout = 8000
+                conn.readTimeout = 8000
+                conn.setRequestProperty("User-Agent", "MusicaApp/1.0")
+                val body = conn.inputStream.bufferedReader().readText()
+                val arr = JSONObject(body).optJSONArray("results")
+                if (arr != null) {
+                    for (i in 0 until arr.length()) {
+                        val hit = arr.getJSONObject(i)
+                        val t = hit.optString("trackName", "")
+                        val g = hit.optString("primaryGenreName", "")
+                        if (g.isNotBlank() && titleMatches(t, title)) {
+                            return OnlineHit(
+                                genre = mappedGenre(g) ?: g,
+                                artist = hit.optString("artistName", "").ifBlank { null },
+                                album = hit.optString("collectionName", "").ifBlank { null }
+                            )
+                        }
+                    }
+                }
+            } finally {
+                conn.disconnect()
+            }
+        } catch (_: Exception) {}
+
+        try {
+            val q = if (artist.isNotBlank())
+                URLEncoder.encode("artist:\"$artist\" track:\"$title\"", "UTF-8")
+            else
+                URLEncoder.encode("track:\"$title\"", "UTF-8")
+            val conn = URL("https://api.deezer.com/search?q=$q&limit=3")
+                .openConnection() as HttpURLConnection
+            try {
+                conn.connectTimeout = 8000
+                conn.readTimeout = 8000
+                conn.setRequestProperty("User-Agent", "MusicaApp/1.0")
+                val body = conn.inputStream.bufferedReader().readText()
+                val data = JSONObject(body).optJSONArray("data")
+                if (data != null) {
+                    for (i in 0 until data.length()) {
+                        val track = data.getJSONObject(i)
+                        val t = track.optString("title_short", track.optString("title", ""))
+                        if (!titleMatches(t, title)) continue
+                        val albumId = track.optJSONObject("album")?.optLong("id") ?: 0L
+                        if (albumId > 0) {
+                            try {
+                                val c2 = URL("https://api.deezer.com/album/$albumId")
+                                    .openConnection() as HttpURLConnection
+                                try {
+                                    c2.connectTimeout = 8000
+                                    c2.readTimeout = 8000
+                                    c2.setRequestProperty("User-Agent", "MusicaApp/1.0")
+                                    val album = JSONObject(c2.inputStream.bufferedReader().readText())
+                                    val genres = album.optJSONObject("genres")?.optJSONArray("data")
+                                    if (genres != null && genres.length() > 0) {
+                                        val gname = genres.getJSONObject(0).optString("name", "")
+                                        if (gname.isNotBlank()) {
+                                            val artistName = track.optJSONObject("artist")
+                                                ?.optString("name", "")?.ifBlank { null }
+                                            return OnlineHit(
+                                                genre = mappedGenre(gname) ?: gname,
+                                                artist = artistName,
+                                                album = album.optString("title", "").ifBlank { null }
+                                            )
+                                        }
+                                    }
+                                } finally {
+                                    c2.disconnect()
+                                }
+                            } catch (_: Exception) {}
+                        }
+                    }
+                }
+            } finally {
+                conn.disconnect()
+            }
+        } catch (_: Exception) {}
+        return null
+    }
+
+    private fun titleMatches(onlineTitle: String, localTitle: String): Boolean {
+        val a = norm(onlineTitle)
+        val b = norm(localTitle)
+        if (a.isEmpty() || b.isEmpty()) return false
+        if (a == b || a.contains(b) || b.contains(a)) return true
+        val wa = a.split(" ").filter { it.length > 2 }
+        val wb = b.split(" ").filter { it.length > 2 }
+        if (wa.isEmpty() || wb.isEmpty()) return false
+        val common = wa.count { it in wb }
+        return common >= 1 && common >= minOf(wa.size, wb.size) / 2
+    }
+
+    private fun norm(s: String): String = Normalizer.normalize(s, Normalizer.Form.NFD)
+        .replace(Regex("\\p{M}+"), "").lowercase().trim()
+
+    private fun detectGenre(caption: String, fileName: String, id3: String?): String? {
+        genreFromTags(caption)?.let { return it }
+        genreFromTags(fileName)?.let { return it }
+        captionGenreLabel(caption)?.let { return it }
+        mappedGenre(id3)?.let { return it }
+        fileNameKeyword(fileName)?.let { return it }
+        return null
+    }
+
+    private fun genreFromTags(text: String): String? {
+        val tags = Regex("#\\s*([\\p{L}]+)").findAll(text).map { norm(it.groupValues[1]) }.toList()
+        for (t in tags) for ((k, v) in genreMap) if (t == k) return v
+        for (t in tags) for ((k, v) in genreMap) if (k.length > 3 && (t.contains(k) || k.contains(t))) return v
+        return null
+    }
+
+    private fun captionGenreLabel(caption: String): String? {
+        val after = Regex("g[eé]nero\\s*:\\s*([\\p{L} ]+)").find(caption)?.groupValues?.get(1)?.trim()
+            ?: return null
+        val n = norm(after)
+        for ((k, v) in genreMap) if (k in n) return v
+        return after.replaceFirstChar { it.uppercase() }
+    }
+
+    private fun fileNameKeyword(fileName: String): String? {
+        val tokens = Regex("[^\\p{L}]+").split(norm(fileName)).filter { it.length >= 3 }
+        for (t in tokens) {
+            for ((k, v) in genreMap) {
+                if (k.contains(" ")) continue
+                val nk = norm(k)
+                if (t == nk || t == nk + "s" || (nk.length >= 5 && t.contains(nk))) return v
+            }
+        }
+        return null
+    }
+
+    private val id3v1Names = listOf(
+        "Blues", "Classic Rock", "Country", "Dance", "Disco", "Funk", "Grunge",
+        "Hip-Hop", "Jazz", "Metal", "New Age", "Oldies", "Other", "Pop", "R&B",
+        "Rap", "Reggae", "Rock", "Techno", "Industrial", "Alternative", "Ska",
+        "Death Metal", "Pranks", "Soundtrack", "Euro-Techno", "Ambient",
+        "Trip-Hop", "Vocal", "Jazz+Funk", "Fusion", "Trance", "Classical",
+        "Instrumental", "Acid", "House", "Game", "Sound Clip", "Gospel", "Noise",
+        "Alternative Rock", "Bass", "Soul", "Punk", "Space", "Meditative",
+        "Instrumental Pop", "Instrumental Rock", "Ethnic", "Gothic", "Darkwave",
+        "Techno-Industrial", "Electronic", "Pop-Folk", "Eurodance", "Dream",
+        "Southern Rock", "Comedy", "Cult", "Gangsta", "Top 40", "Christian Rap",
+        "Pop/Funk", "Jungle", "Native American", "Cabaret", "New Wave",
+        "Psychedelic", "Rave", "Showtunes", "Trailer", "Lo-Fi", "Tribal",
+        "Acid Punk", "Acid Jazz", "Polka", "Retro", "Musical", "Rock & Roll",
+        "Hard Rock", "Folk", "Folk-Rock", "National Folk", "Swing", "Fast-Fusion",
+        "Bebop", "Latin", "Revival", "Celtic", "Bluegrass", "Avantgarde",
+        "Gothic Rock", "Progressive Rock", "Psychedelic Rock", "Symphonic Rock",
+        "Slow Rock", "Big Band", "Chorus", "Easy Listening", "Acoustic", "Humour",
+        "Speech", "Chanson", "Opera", "Chamber Music", "Sonata", "Symphony",
+        "Booty Bass", "Primus", "Porn Groove", "Satire", "Slow Jam", "Club",
+        "Tango", "Samba", "Folklore", "Ballad", "Power Ballad", "Rhythmic Soul",
+        "Freestyle", "Duet", "Punk Rock", "Drum Solo", "A Cappella", "Euro-House",
+        "Dance Hall"
+    )
+
+    private val extraGenreWords = listOf(
+        "latin" to "Latino", "latino" to "Latino",
+        "country" to "Country", "soul" to "Soul", "funk" to "Funk",
+        "blues" to "Blues", "indie" to "Indie",
+        "alternative" to "Alternativo", "alternativo" to "Alternativo",
+        "world" to "Música del Mundo", "k-pop" to "K-Pop", "j-pop" to "J-Pop",
+        "new age" to "New Age", "easy listening" to "Instrumental",
+        "children" to "Infantil"
+    )
+
+    private fun mappedGenre(raw: String?): String? {
+        if (raw.isNullOrBlank()) return null
+        val num = norm(raw)
+        val resolved = if (num.all { it.isDigit() }) {
+            val idx = num.toIntOrNull() ?: return null
+            if (idx in id3v1Names.indices) id3v1Names[idx] else return null
+        } else raw
+        val n = norm(resolved)
+        if (n == "other" || n == "otros" || n == "unknown" || n == "desconocido") return null
+        for ((k, v) in genreMap) if (k in n) return v
+        for ((k, v) in extraGenreWords) if (k in n) return v
+        return resolved.split("/", "(", "-").first().trim()
+            .replaceFirstChar { it.uppercase() }.ifBlank { null }
+    }
+
+    private fun reclassifyLite(): Int {
+        var count = 0
+        val updated = _songs.value.map { s ->
+            if (s.genre == "Otros" && (s.caption.isNotBlank() || s.fileName.isNotBlank())) {
+                val g = detectGenre(s.caption, s.fileName, null)
+                if (g != null && g != "Otros") count++
+                s.copy(genre = g ?: s.genre)
+            } else s
+        }
+        if (updated != _songs.value) {
+            _songs.value = updated
+            save()
+        }
+        return count
+    }
+
+    private fun attemptsFile() = File(context.filesDir, "online_attempts.json")
+
+    private fun saveAttempts() {
+        try {
+            val o = JSONObject()
+            attempts.forEach { (k, v) -> o.put(k.toString(), v) }
+            attemptsFile().writeText(o.toString())
+        } catch (_: Exception) {}
+    }
+
+    private fun loadAttempts() {
+        try {
+            val f = attemptsFile()
+            if (!f.exists()) return
+            val o = JSONObject(f.readText())
+            o.keys().forEach { k -> attempts[k.toInt()] = o.optInt(k, 0) }
+        } catch (_: Exception) {}
+    }
+
+    private fun file() = File(context.filesDir, "library.json")
+
+    private fun save() {
+        try {
+            val arr = JSONArray()
+            _songs.value.forEach { s ->
+                arr.put(
+                    JSONObject()
+                        .put("id", s.id).put("title", s.title).put("artist", s.artist)
+                        .put("album", s.album).put("durationSec", s.durationSec)
+                        .put("fileId", s.fileId).put("genre", s.genre)
+                        .put("fromTelegram", s.fromTelegram).put("scanned", s.scanned)
+                        .put("coverPath", s.coverPath).put("metaDone", s.metaDone)
+                        .put("caption", s.caption).put("fileName", s.fileName)
+                )
+            }
+            file().writeText(arr.toString())
+        } catch (_: Exception) {}
+    }
+
+    private fun load() {
+        try {
+            val f = file()
+            if (!f.exists()) return
+            val arr = JSONArray(f.readText())
+            val list = (0 until arr.length()).map { i ->
+                val o = arr.getJSONObject(i)
+                Song(
+                    id = o.optInt("id"), title = o.optString("title"),
+                    artist = o.optString("artist"), album = o.optString("album"),
+                    durationSec = o.optInt("durationSec"), url = "",
+                    fileId = o.optString("fileId"),
+                    genre = o.optString("genre", "Otros"),
+                    fromTelegram = o.optBoolean("fromTelegram"),
+                    scanned = o.optBoolean("scanned"),
+                    coverPath = o.optString("coverPath", ""),
+                    metaDone = o.optBoolean("metaDone"),
+                    caption = o.optString("caption", ""),
+                    fileName = o.optString("fileName", "")
+                )
+            }
+            _songs.value = list
+        } catch (_: Exception) {}
+    }
+}
