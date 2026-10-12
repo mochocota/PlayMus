@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -46,7 +47,6 @@ import kotlinx.coroutines.withContext
 fun TelegramSetupScreen(nav: NavHostController) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
-    // Si el token ya viene del código o del teléfono, se muestra como referencia
     var token by remember { mutableStateOf(TelegramConfig.token(ctx)) }
     var canal by remember { mutableStateOf(TelegramConfig.channel(ctx)) }
     var busy by remember { mutableStateOf(false) }
@@ -104,7 +104,6 @@ fun TelegramSetupScreen(nav: NavHostController) {
         Spacer(Modifier.height(18.dp))
 
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            // ---------- Probar conexión (sin guardar) ----------
             Box(Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(12.dp))
                 .background(CardLighter).clickable(enabled = !busy && token.isNotBlank()) {
                     busy = true; testingOnly = true; result = "Probando…"; resultOk = null
@@ -128,7 +127,6 @@ fun TelegramSetupScreen(nav: NavHostController) {
                     Text("Probar conexión", color = Color.White, fontSize = 14.sp)
                 }
             }
-            // ---------- Guardar (prueba + guarda si es válido) ----------
             Box(Modifier.weight(1f).height(48.dp).clip(RoundedCornerShape(12.dp))
                 .background(GradientBrush).clickable(enabled = !busy && token.isNotBlank()) {
                     busy = true; testingOnly = false; result = "Probando y guardando…"; resultOk = null
@@ -165,6 +163,34 @@ fun TelegramSetupScreen(nav: NavHostController) {
                 },
                 fontSize = 13.sp)
         }
+
+        // ============================================================
+        // File ID de importación: la cadena para que OTROS
+        // dispositivos carguen toda la biblioteca solos
+        // ============================================================
+        val autoFid = TelegramConfig.autoImportFileId(ctx)
+        if (autoFid.isNotBlank()) {
+            Spacer(Modifier.height(24.dp))
+            Text("Biblioteca para compartir", color = TextSecondary, fontSize = 13.sp)
+            Spacer(Modifier.height(6.dp))
+            SelectionContainer {
+                Text(
+                    autoFid,
+                    color = Cyan, fontSize = 12.sp, lineHeight = 16.sp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(CardDark)
+                        .padding(10.dp)
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Esta es la cadena correcta del archivo de importación. Cópiala (mantén el dedo sobre ella) y pégala entre las comillas de DEFAULT_IMPORT_FILE_ID en TelegramClient.kt. Así cualquier dispositivo nuevo importará toda la biblioteca sin reenviar nada.",
+                color = TextSecondary, fontSize = 12.sp, lineHeight = 16.sp
+            )
+        }
+
         Spacer(Modifier.height(10.dp))
         Text("Nota: los bots de Telegram solo descargan archivos de hasta 20 MB.",
             color = TextSecondary, fontSize = 12.sp)
