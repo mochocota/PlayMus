@@ -24,8 +24,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
+import com.example.musica.data.DownloadRepository
 import com.example.musica.data.MusicRepository
-import com.example.musica.data.ff6Songs
 import com.example.musica.data.genreColor
 import com.example.musica.player.PlayerViewModel
 import com.example.musica.ui.components.CoverImage
@@ -36,11 +36,12 @@ import com.example.musica.ui.theme.TextSecondary
 
 @Composable
 fun ExploreScreen(nav: NavHostController, vm: PlayerViewModel) {
-    val songsRepo by MusicRepository.songs.collectAsState()
-    val library = songsRepo.ifEmpty { ff6Songs }
+    val songsRaw by MusicRepository.songs.collectAsState()
+    val offline by DownloadRepository.offlineMode.collectAsState()
+    val library = if (offline) songsRaw.filter { DownloadRepository.isDownloaded(it.id) }
+    else songsRaw
     var selected by remember { mutableStateOf("Todas") }
 
-    // Géneros reales de la biblioteca, con su cantidad
     val genres = library.groupingBy { it.genre }.eachCount().toList()
         .sortedBy { it.first.lowercase() }
     val visible = if (selected == "Todas") library
@@ -48,11 +49,9 @@ fun ExploreScreen(nav: NavHostController, vm: PlayerViewModel) {
 
     Column(Modifier.fillMaxSize().background(NavyBg).padding(16.dp)) {
 
-        // ---------- Encabezado (sin lupa) ----------
         Text("Explorar", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(16.dp))
 
-        // ---------- Banner (solo "Descubre nuevos sonidos") ----------
         Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
             .background(Brush.horizontalGradient(listOf(Color(0xFF5B21B6), Color(0xFFBE185D))))
             .padding(18.dp)) {
@@ -61,7 +60,6 @@ fun ExploreScreen(nav: NavHostController, vm: PlayerViewModel) {
         }
         Spacer(Modifier.height(16.dp))
 
-        // ---------- Filtros por género (dinámicos) ----------
         Row(Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             GenreChip(
@@ -76,10 +74,11 @@ fun ExploreScreen(nav: NavHostController, vm: PlayerViewModel) {
             }
         }
         Spacer(Modifier.height(12.dp))
-        Text("${visible.size} canciones", color = TextSecondary, fontSize = 12.sp)
+        Text(if (offline) "✈️ Offline · ${visible.size} canciones"
+        else "${visible.size} canciones",
+            color = TextSecondary, fontSize = 12.sp)
         Spacer(Modifier.height(8.dp))
 
-        // ---------- Cuadrícula de 3 columnas ----------
         LazyVerticalGrid(
             columns = GridCells.Fixed(3),
             modifier = Modifier.weight(1f),
@@ -89,7 +88,8 @@ fun ExploreScreen(nav: NavHostController, vm: PlayerViewModel) {
             items(visible.size) { i ->
                 val s = visible[i]
                 Column(Modifier.clickable { vm.play(s, visible) }) {
-                    CoverImage(s, Modifier.fillMaxWidth().aspectRatio(1f), corner = 12.dp)
+                    CoverImage(s, Modifier.fillMaxWidth().aspectRatio(1f),
+                        corner = 12.dp, offlineBadge = true)
                     Spacer(Modifier.height(6.dp))
                     Text(s.title, color = Color.White, fontSize = 12.sp,
                         maxLines = 1, lineHeight = 14.sp)
