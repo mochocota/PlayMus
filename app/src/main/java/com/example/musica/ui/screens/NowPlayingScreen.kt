@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Lyrics
+import androidx.compose.material.icons.filled.NightsStay
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
@@ -98,9 +99,9 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
     var dragValue by remember { mutableStateOf(0f) }
     var songToAdd by remember { mutableStateOf<Song?>(null) }
     var showEq by remember { mutableStateOf(false) }
+    var showSleep by remember { mutableStateOf(false) }
     var showDeleteDl by remember { mutableStateOf(false) }
 
-    // ---------- Descargas ----------
     val dlVersion by DownloadRepository.version.collectAsState()
     val dlProgress by DownloadRepository.progress.collectAsState()
     val context = LocalContext.current
@@ -189,7 +190,6 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                                     color = TextSecondary, fontSize = 13.sp, maxLines = 1)
                             }
 
-                            // ---------- Botón de descarga ----------
                             IconButton(onClick = {
                                 when {
                                     isDownloaded -> showDeleteDl = true
@@ -323,6 +323,13 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                                 Icon(Icons.Filled.Equalizer, "Ecualizador",
                                     tint = Color.White, modifier = Modifier.size(28.dp))
                             }
+                            // ---------- Botón del Sleep Timer ----------
+                            IconButton(onClick = { showSleep = true }) {
+                                Icon(Icons.Filled.NightsStay, "Temporizador de sueño",
+                                    tint = if (vm.sleepTimerRemaining > 0 || vm.sleepTimerEndOfSong)
+                                        Cyan else Color.White,
+                                    modifier = Modifier.size(26.dp))
+                            }
                             IconButton(onClick = { songToAdd = song }) {
                                 Icon(Icons.Filled.PlaylistAdd, "Añadir a lista",
                                     tint = Color.White, modifier = Modifier.size(28.dp))
@@ -374,6 +381,9 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
 
     if (showEq) EqualizerDialog(onDismiss = { showEq = false })
 
+    // ---------- Diálogo del Sleep Timer ----------
+    if (showSleep) SleepTimerDialog(vm) { showSleep = false }
+
     if (showDeleteDl && song != null) {
         AlertDialog(
             onDismissRequest = { showDeleteDl = false },
@@ -397,127 +407,95 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
 }
 
 // ============================================================
-// Diálogo del ecualizador
+// Diálogo del Sleep Timer
 // ============================================================
 @Composable
-private fun EqualizerDialog(onDismiss: () -> Unit) {
-    val available = EqualizerManager.available
-    val bandCount = if (available) EqualizerManager.bandCount().coerceAtLeast(1) else 5
-    val range = EqualizerManager.bandRange()
-
-    var enabled by remember { mutableStateOf(EqualizerManager.isEnabled()) }
-    var preset by remember { mutableStateOf(EqualizerManager.currentPreset()) }
-    var levels by remember {
-        mutableStateOf((0 until bandCount).map { EqualizerManager.bandLevel(it) })
-    }
-    var bass by remember { mutableStateOf(EqualizerManager.bassStrength()) }
+private fun SleepTimerDialog(vm: PlayerViewModel, onDismiss: () -> Unit) {
+    val active = vm.sleepTimerRemaining > 0 || vm.sleepTimerEndOfSong
+    val remaining = vm.sleepTimerRemaining
 
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = CardDark,
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Ecualizador", color = Color.White,
-                    fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                Switch(
-                    checked = enabled,
-                    onCheckedChange = { enabled = it; EqualizerManager.setEnabled(it) },
-                    colors = SwitchDefaults.colors(checkedTrackColor = Purple)
-                )
-            }
-        },
+        title = { Text("Temporizador de sueño", color = Color.White, fontWeight = FontWeight.Bold) },
         text = {
-            if (!available) {
-                Text(
-                    "El ecualizador no está disponible en este dispositivo (o aún no hay sesión de audio activa).\n\nReproduce una canción y abre el ecualizador de nuevo.",
-                    color = TextSecondary, fontSize = 13.sp, lineHeight = 18.sp
-                )
-            } else {
-                Column(Modifier.verticalScroll(rememberScrollState())) {
-
-                    Text("Presets", color = TextSecondary, fontSize = 12.sp)
-                    Spacer(Modifier.height(6.dp))
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.horizontalScroll(rememberScrollState())
-                    ) {
-                        (0 until EqualizerManager.presetCount()).forEach { i ->
-                            val selected = preset == i
-                            Box(
-                                Modifier
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .background(if (selected) Purple else CardLighter)
-                                    .clickable {
-                                        EqualizerManager.usePreset(i)
-                                        preset = i
-                                        levels = (0 until bandCount)
-                                            .map { EqualizerManager.bandLevel(it) }
-                                    }
-                                    .padding(horizontal = 10.dp, vertical = 6.dp)
-                            ) {
-                                Text(EqualizerManager.presetName(i),
-                                    color = Color.White, fontSize = 11.sp, maxLines = 1)
-                            }
-                        }
+            Column(horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth()) {
+                if (active) {
+                    // ---------- Cuenta regresiva activa ----------
+                    if (vm.sleepTimerEndOfSong) {
+                        Text("🌙 Se detendrá al final de esta canción",
+                            color = Cyan, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    } else {
+                        val min = remaining / 60000
+                        val sec = (remaining % 60000) / 1000
+                        Text("%d:%02d".format(min, sec),
+                            color = Cyan, fontSize = 44.sp, fontWeight = FontWeight.Bold)
+                        Text("La música se pausará al terminar",
+                            color = TextSecondary, fontSize = 12.sp)
                     }
+                    Spacer(Modifier.height(14.dp))
+                    TextButton(onClick = {
+                        vm.cancelSleepTimer()
+                        onDismiss()
+                    }) { Text("Cancelar temporizador", color = Pink) }
+                } else {
+                    // ---------- Selección de duración ----------
+                    Text("La música se pausará cuando termine el tiempo:",
+                        color = TextSecondary, fontSize = 13.sp)
                     Spacer(Modifier.height(12.dp))
-
-                    levels.forEachIndexed { i, lvl ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(formatFreq(EqualizerManager.bandFreq(i)),
-                                color = TextSecondary, fontSize = 11.sp,
-                                modifier = Modifier.width(52.dp))
-                            Slider(
-                                value = lvl.toFloat(),
-                                onValueChange = { v ->
-                                    val nv = v.toInt()
-                                    levels = levels.toMutableList().also { l -> l[i] = nv }
-                                    preset = -1
-                                    EqualizerManager.setBandLevel(i, nv)
-                                },
-                                valueRange = range[0].toFloat()..range[1].toFloat(),
-                                colors = SliderDefaults.colors(
-                                    thumbColor = Color.White,
-                                    activeTrackColor = Purple,
-                                    inactiveTrackColor = TrackColor
-                                ),
-                                modifier = Modifier.weight(1f)
-                            )
-                            Text(dbLabel(lvl), color = TextSecondary, fontSize = 11.sp,
-                                modifier = Modifier.width(44.dp), textAlign = TextAlign.End)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()) {
+                        SleepChip("15 min", Modifier.weight(1f)) {
+                            vm.startSleepTimer(15); onDismiss()
+                        }
+                        SleepChip("30 min", Modifier.weight(1f)) {
+                            vm.startSleepTimer(30); onDismiss()
                         }
                     }
-
                     Spacer(Modifier.height(8.dp))
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Bass", color = TextSecondary, fontSize = 11.sp,
-                            modifier = Modifier.width(52.dp))
-                        Slider(
-                            value = bass.toFloat(),
-                            onValueChange = { v ->
-                                bass = v.toInt()
-                                EqualizerManager.setBassStrength(v.toInt())
-                            },
-                            valueRange = 0f..1000f,
-                            colors = SliderDefaults.colors(
-                                thumbColor = Color.White,
-                                activeTrackColor = Pink,
-                                inactiveTrackColor = TrackColor
-                            ),
-                            modifier = Modifier.weight(1f)
-                        )
-                        Text("${(bass * 100) / 1000}%",
-                            color = TextSecondary, fontSize = 11.sp,
-                            modifier = Modifier.width(44.dp), textAlign = TextAlign.End)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()) {
+                        SleepChip("45 min", Modifier.weight(1f)) {
+                            vm.startSleepTimer(45); onDismiss()
+                        }
+                        SleepChip("1 hora", Modifier.weight(1f)) {
+                            vm.startSleepTimer(60); onDismiss()
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()) {
+                        SleepChip("2 horas", Modifier.weight(1f)) {
+                            vm.startSleepTimer(120); onDismiss()
+                        }
+                        SleepChip("Final can.", Modifier.weight(1f)) {
+                            vm.sleepAtEndOfSong(); onDismiss()
+                        }
                     }
                 }
             }
         },
-        confirmButton = {
+        confirmButton = {},
+        dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cerrar", color = Purple) }
         }
     )
+}
+
+@Composable
+private fun SleepChip(label: String, modifier: Modifier, onClick: () -> Unit) {
+    Box(
+        modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(CardLighter)
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(label, color = Color.White, fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold)
+    }
 }
 
 private fun formatFreq(milliHz: Int): String =
@@ -545,7 +523,6 @@ private fun LyricsView(
     val fresh = MusicRepository.songs.value.firstOrNull { it.id == song.id } ?: song
     val scope = rememberCoroutineScope()
 
-    // ---------- Estado de la traducción ----------
     var translations by remember { mutableStateOf<List<String>?>(null) }
     var plainTranslation by remember { mutableStateOf<String?>(null) }
     var translating by remember { mutableStateOf(false) }
@@ -603,10 +580,8 @@ private fun LyricsView(
                 fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f),
                 textAlign = TextAlign.Center)
 
-            // ---------- Botón de traducción ----------
             IconButton(onClick = {
                 if (translations != null || plainTranslation != null) {
-                    // Ya traducida: alternar mostrar/ocultar
                     showTranslation = !showTranslation
                     transMsg = ""
                 } else {
@@ -630,7 +605,6 @@ private fun LyricsView(
             textAlign = TextAlign.Center)
         Spacer(Modifier.height(8.dp))
 
-        // Mensaje del traductor
         if (transMsg.isNotBlank()) {
             Text(transMsg,
                 color = if (transMsg.startsWith("No se")) Pink else Cyan,
@@ -639,7 +613,6 @@ private fun LyricsView(
             Spacer(Modifier.height(6.dp))
         }
 
-        // ---------- Contenido de la letra ----------
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
                 loading -> {
@@ -724,8 +697,7 @@ private fun LyricsView(
     }
 }
 
-// Letra sincronizada bilingüe: cada línea en su idioma (siguiendo
-// el ritmo) y debajo su traducción, más pequeña y tenue.
+// Letra sincronizada bilingüe
 @Composable
 private fun SyncedLyrics(
     lines: List<LyricLine>,
