@@ -88,8 +88,9 @@ object DownloadRepository {
                 val url = if (song.fromTelegram && song.fileId.isNotEmpty()) {
                     val token = TelegramConfig.token(context)
                     if (token.isBlank()) return@withContext "Sin token del bot"
-                    val client = TelegramClient(token)
-                    client.fileUrl(client.getFilePath(song.fileId))
+                    // Usa el caché de URLs: si la canción sonó hace poco,
+                    // la resolución es instantánea
+                    TelegramClient(token).resolveFileUrl(song.fileId)
                 } else {
                     song.url
                 }
