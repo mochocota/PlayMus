@@ -2,11 +2,9 @@ package com.example.musica.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -14,8 +12,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -23,11 +19,8 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import com.example.musica.data.MusicRepository
 import com.example.musica.data.PlayStatsRepository
-import com.example.musica.data.recentHome
 import com.example.musica.player.PlayerViewModel
-import com.example.musica.ui.components.AlbumArt
 import com.example.musica.ui.components.CoverImage
-import com.example.musica.ui.components.SectionHeader
 import com.example.musica.ui.theme.NavyBg
 import com.example.musica.ui.theme.TextSecondary
 
@@ -35,16 +28,24 @@ import com.example.musica.ui.theme.TextSecondary
 fun HomeScreen(nav: NavHostController, vm: PlayerViewModel) {
     val songs by MusicRepository.songs.collectAsState()
     val stats by PlayStatsRepository.counts.collectAsState()
+    val lastPlayed by PlayStatsRepository.lastPlayed.collectAsState()
 
-    // Las 30 canciones más reproducidas
+    // Escuchado recientemente: historial REAL por fecha de reproducción
+    val recentSongs = remember(songs, lastPlayed) {
+        lastPlayed.entries.sortedByDescending { it.value }
+            .mapNotNull { e -> songs.firstOrNull { it.id == e.key } }
+            .take(12)
+    }
+
+    // Las más reproducidas (hasta 30)
     val topSongs = remember(songs, stats) {
         songs.filter { (stats[it.id] ?: 0) > 0 }
             .sortedByDescending { stats[it.id] ?: 0 }
             .take(30)
     }
 
-    // "Podría gustarte": parecidas a las más reproducidas
-    val recommended = remember(songs, stats, topSongs) {
+    // Te podría gustar: parecidas (género o artista) a las más reproducidas
+    val recommended = remember(songs, topSongs) {
         if (topSongs.isEmpty()) emptyList()
         else {
             val topIds = topSongs.map { it.id }.toSet()
@@ -61,35 +62,22 @@ fun HomeScreen(nav: NavHostController, vm: PlayerViewModel) {
     Column(Modifier.fillMaxSize().background(NavyBg)
         .verticalScroll(rememberScrollState()).padding(16.dp)) {
 
-        // ---------- Encabezado ----------
         Text("Inicio", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(20.dp))
 
-        Text("Buenas emociones,\nSiempre 🎵", color = Color.White, fontSize = 22.sp,
-            fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(14.dp))
-
-        // ---------- Banner (solo texto, sin botón) ----------
-        Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-            .background(Brush.horizontalGradient(listOf(Color(0xFF241A3E), Color(0xFF12305A))))
-            .padding(16.dp)) {
-            Column {
-                Text("Hoy es un gran día", color = Color.White, fontWeight = FontWeight.SemiBold)
-                Text("para escuchar buena música 🎵", color = TextSecondary, fontSize = 13.sp)
-            }
-        }
-
         // ---------- Escuchado recientemente ----------
-        Spacer(Modifier.height(22.dp))
-        SectionHeader("Escuchado recientemente", "Ver todo")
-        Spacer(Modifier.height(12.dp))
-        if (songs.isNotEmpty()) {
-            val rec = songs.take(6)
+        Text("Escuchado recientemente", color = Color.White, fontSize = 16.sp,
+            fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(4.dp))
+        if (recentSongs.isEmpty()) {
+            Text("Reproduce canciones y aparecerán aquí.",
+                color = TextSecondary, fontSize = 13.sp)
+        } else {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(rec.size) { i ->
-                    val s = rec[i]
+                items(recentSongs.size) { i ->
+                    val s = recentSongs[i]
                     Column(Modifier.width(110.dp).clickable {
-                        vm.play(s, songs)
+                        vm.play(s, recentSongs)
                         nav.navigate("player")
                     }) {
                         CoverImage(s, Modifier.size(110.dp), corner = 14.dp)
@@ -99,21 +87,9 @@ fun HomeScreen(nav: NavHostController, vm: PlayerViewModel) {
                     }
                 }
             }
-        } else {
-            Row(Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                recentHome.forEach { (name, kind) ->
-                    Column(Modifier.width(110.dp)) {
-                        AlbumArt(Modifier.size(110.dp))
-                        Spacer(Modifier.height(8.dp))
-                        Text(name, color = Color.White, fontSize = 13.sp, maxLines = 1)
-                        Text(kind, color = TextSecondary, fontSize = 11.sp)
-                    }
-                }
-            }
         }
 
-        // ---------- Las 30 más reproducidas ----------
+        // ---------- Las más reproducidas ----------
         Spacer(Modifier.height(22.dp))
         Text("Las más reproducidas", color = Color.White, fontSize = 16.sp,
             fontWeight = FontWeight.Bold)
@@ -139,9 +115,9 @@ fun HomeScreen(nav: NavHostController, vm: PlayerViewModel) {
             }
         }
 
-        // ---------- Podría gustarte ----------
+        // ---------- Te podría gustar ----------
         Spacer(Modifier.height(22.dp))
-        Text("Podría gustarte", color = Color.White, fontSize = 16.sp,
+        Text("Te podría gustar", color = Color.White, fontSize = 16.sp,
             fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(4.dp))
         if (recommended.isEmpty()) {
