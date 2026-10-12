@@ -49,6 +49,13 @@ object DownloadRepository {
 
     private fun prefs() = context.getSharedPreferences("downloads_prefs", Context.MODE_PRIVATE)
 
+    // ============================================================
+    // CONJUNTO EN MEMORIA de canciones descargadas: evita hacer
+    // E/S de disco (File.exists) por cada celda al desplazarse.
+    // ============================================================
+    private val _downloaded = MutableStateFlow<Set<Int>>(emptySet())
+    val downloadedIds: StateFlow<Set<Int>> = _downloaded
+
     // Scope propio: las descargas continúan aunque salgas de la pantalla
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -57,35 +64,49 @@ object DownloadRepository {
     fun init(ctx: Context) {
         context = ctx.applicationContext
         dir().mkdirs()
+        refreshDownloadedSet()
         try {
             _offlineMode.value = prefs().getBoolean("offline_mode", false)
         } catch (_: Exception) {}
     }
 
+    private fun prefs() = context.getSharedPreferences("downloads_prefs", Context.MODE_PRIVATE)
     private fun dir() = File(context.filesDir, "downloads")
     private fun finalFile(id: Int) = File(dir(), "$id.mp3")
+
+    private fun refreshDownloadedSet() {
+        try {
+            _downloaded.value = dir().listFiles()
+                ?.filter { it.name.endsWith(".mp3") }
+                ?.mapNotNull { it.name.removeSuffix(".mp3").toIntOrNull() }
+                ?.toSet() ?: emptySet()
+        } catch (_: Exception) {
+            _downloaded.value = emptySet()
+        }
+    }
 
     fun downloadedFile(songId: Int): File? {
         val f = finalFile(songId)
         return if (f.exists()) f else null
     }
 
-    fun isDownloaded(songId: Int): Boolean = finalFile(songId).exists()
+    // O(1), en memoria — seguro para llamar durante la composición
+    fun isDownloaded(songId: Int): Boolean = songId in _downloaded.value
 
-    fun downloadedCount(): Int =
-        dir().listFiles()?.count { it.name.endsWith(".mp3") } ?: 0
+    fun downloadedCount(): Int = _downloaded.value.size
 
-    fun totalBytes(): Long =
-        dir().listFiles()?.sumOf { it.length() } ?: 0L
+    fun totalBytes(): Long = dir().listFiles()?.sumOf { it.length() } ?: 0L
 
     fun delete(songId: Int): Boolean {
         val ok = finalFile(songId).delete()
+        if (ok) _downloaded.value = _downloaded.value - songId
         bump()
         return ok
     }
 
     fun deleteAll() {
         dir().listFiles()?.forEach { it.delete() }
+        _downloaded.value = emptySet()
         _progress.value = emptyMap()
         bump()
     }
@@ -100,11 +121,7 @@ object DownloadRepository {
         }
     }
 
-    // ============================================================
-    // DESCARGAR TODAS: descarga en secuencia una lista completa,
-    // saltando las ya descargadas. Informa progreso (n/total)
-    // vía el StateFlow batch y el resultado final por callback.
-    // ============================================================
+    // Descarga una lista completa, saltando las ya descargadas
     fun startDownloadAll(songs: List<Song>, onResult: (String) -> Unit) {
         scope.launch {
             val pending = songs.filter { !isDownloaded(it.id) }
@@ -177,6 +194,7 @@ object DownloadRepository {
                     tmp.copyTo(finalFile(song.id), overwrite = true)
                     tmp.delete()
                 }
+                _downloaded.value = _downloaded.value + song.id
                 bump()
                 "ok"
             } catch (e: Exception) {
