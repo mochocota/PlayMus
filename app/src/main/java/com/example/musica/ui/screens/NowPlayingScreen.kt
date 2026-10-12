@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -84,6 +85,7 @@ import androidx.mediarouter.app.MediaRouteButton
 import com.google.android.gms.cast.framework.CastButtonFactory
 import com.google.android.gms.cast.framework.CastContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
@@ -139,7 +141,6 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
         }
     }
 
-    // ¿Está descargada la canción actual? (se recalcula con dlVersion)
     val isDownloaded = remember(dlVersion, song?.id) {
         song != null && DownloadRepository.isDownloaded(song.id)
     }
@@ -373,7 +374,6 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
 
     if (showEq) EqualizerDialog(onDismiss = { showEq = false })
 
-    // ---------- Confirmación: eliminar la descarga ----------
     if (showDeleteDl && song != null) {
         AlertDialog(
             onDismissRequest = { showDeleteDl = false },
@@ -530,7 +530,7 @@ private fun dbLabel(milliBel: Int): String {
 }
 
 // ============================================================
-// Vista de letra
+// Vista de letra (con traducción opcional)
 // ============================================================
 @Composable
 private fun LyricsView(
@@ -543,6 +543,54 @@ private fun LyricsView(
     onRetry: () -> Unit
 ) {
     val fresh = MusicRepository.songs.value.firstOrNull { it.id == song.id } ?: song
+    val scope = rememberCoroutineScope()
+
+    // ---------- Estado de la traducción ----------
+    var translations by remember { mutableStateOf<List<String>?>(null) }
+    var plainTranslation by remember { mutableStateOf<String?>(null) }
+    var translating by remember { mutableStateOf(false) }
+    var showTranslation by remember { mutableStateOf(false) }
+    var transMsg by remember { mutableStateOf("") }
+
+    fun doTranslate() {
+        if (translating) return
+        translating = true
+        transMsg = ""
+        scope.launch {
+            val syncedL = lyrics?.synced.orEmpty()
+            if (syncedL.isNotEmpty()) {
+                val res = try {
+                    LyricsRepository.getTranslation(song.id, syncedL.map { it.text })
+                } catch (_: Exception) { null }
+                if (res == null) {
+                    transMsg = "No se pudo traducir. Inténtalo de nuevo."
+                } else if (res.lang.startsWith("es")) {
+                    transMsg = "La letra ya está en español ✓"
+                    translations = null
+                    showTranslation = false
+                } else {
+                    translations = res.lines
+                    showTranslation = true
+                    transMsg = "Traducido desde ${res.lang.uppercase()} ✓"
+                }
+            } else if (lyrics?.plain != null) {
+                val res = try { LyricsRepository.translateText(lyrics?.plain ?: "") }
+                catch (_: Exception) { null }
+                if (res == null) {
+                    transMsg = "No se pudo traducir. Inténtalo de nuevo."
+                } else if (res.first.startsWith("es")) {
+                    transMsg = "La letra ya está en español ✓"
+                    plainTranslation = null
+                    showTranslation = false
+                } else {
+                    plainTranslation = res.second
+                    showTranslation = true
+                    transMsg = "Traducido desde ${res.first.uppercase()} ✓"
+                }
+            }
+            translating = false
+        }
+    }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
 
@@ -554,10 +602,44 @@ private fun LyricsView(
             Text("Letra", color = Color.White, fontSize = 18.sp,
                 fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f),
                 textAlign = TextAlign.Center)
-            Spacer(Modifier.width(48.dp))
-        }
-        Spacer(Modifier.height(10.dp))
 
+            // ---------- Botón de traducción ----------
+            IconButton(onClick = {
+                if (translations != null || plainTranslation != null) {
+                    // Ya traducida: alternar mostrar/ocultar
+                    showTranslation = !showTranslation
+                    transMsg = ""
+                } else {
+                    doTranslate()
+                }
+            }) {
+                if (translating) {
+                    CircularProgressIndicator(Modifier.size(20.dp),
+                        strokeWidth = 2.dp, color = Cyan)
+                } else {
+                    Icon(Icons.Filled.Translate, "Traducir",
+                        tint = if (showTranslation) Cyan else Color.White,
+                        modifier = Modifier.size(24.dp))
+                }
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Text("Letra por LRCLIB · Traducción por Google",
+            color = TextSecondary.copy(alpha = 0.7f),
+            fontSize = 10.sp, modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center)
+        Spacer(Modifier.height(8.dp))
+
+        // Mensaje del traductor
+        if (transMsg.isNotBlank()) {
+            Text(transMsg,
+                color = if (transMsg.startsWith("No se")) Pink else Cyan,
+                fontSize = 12.sp, textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth())
+            Spacer(Modifier.height(6.dp))
+        }
+
+        // ---------- Contenido de la letra ----------
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
                 loading -> {
@@ -595,7 +677,7 @@ private fun LyricsView(
                     val synced = lyrics?.synced.orEmpty()
                     val plain = lyrics?.plain
                     if (synced.isNotEmpty()) {
-                        SyncedLyrics(synced, vm)
+                        SyncedLyrics(synced, vm, translations, showTranslation)
                     } else if (plain != null) {
                         Column(
                             Modifier.fillMaxSize().verticalScroll(rememberScrollState())
@@ -604,6 +686,16 @@ private fun LyricsView(
                             Text(plain, color = Color.White, fontSize = 16.sp,
                                 lineHeight = 26.sp, textAlign = TextAlign.Center,
                                 modifier = Modifier.fillMaxWidth())
+                            if (showTranslation && plainTranslation != null) {
+                                Spacer(Modifier.height(20.dp))
+                                Box(Modifier.fillMaxWidth().height(1.dp)
+                                    .background(TextSecondary.copy(alpha = 0.3f)))
+                                Spacer(Modifier.height(20.dp))
+                                Text(plainTranslation ?: "", color = TextSecondary,
+                                    fontSize = 14.sp, lineHeight = 22.sp,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth())
+                            }
                         }
                     } else {
                         Text("No se encontró la letra de esta canción",
@@ -628,17 +720,19 @@ private fun LyricsView(
             }
             Icon(Icons.Filled.KeyboardArrowUp, "Volver al reproductor", tint = TextSecondary)
         }
-        Spacer(Modifier.height(6.dp))
-        Text("Letra por LRCLIB", color = TextSecondary.copy(alpha = 0.6f),
-            fontSize = 10.sp, modifier = Modifier.fillMaxWidth(),
-            textAlign = TextAlign.Center)
         Spacer(Modifier.height(10.dp))
     }
 }
 
-// Letra sincronizada: resalta la línea que suena y se desplaza sola
+// Letra sincronizada bilingüe: cada línea en su idioma (siguiendo
+// el ritmo) y debajo su traducción, más pequeña y tenue.
 @Composable
-private fun SyncedLyrics(lines: List<LyricLine>, vm: PlayerViewModel) {
+private fun SyncedLyrics(
+    lines: List<LyricLine>,
+    vm: PlayerViewModel,
+    translations: List<String>?,
+    showTranslation: Boolean
+) {
     val listState = rememberLazyListState()
     var current by remember { mutableStateOf(-1) }
 
@@ -659,20 +753,39 @@ private fun SyncedLyrics(lines: List<LyricLine>, vm: PlayerViewModel) {
     ) {
         items(lines.size) { i ->
             val active = i == current
-            Text(
-                text = lines[i].text.ifBlank { "♪" },
-                color = if (active) Color.White else TextSecondary.copy(alpha = 0.75f),
-                fontSize = if (active) 19.sp else 15.sp,
-                fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
-                lineHeight = if (active) 26.sp else 22.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
+            val tr = if (showTranslation && translations != null && i < translations.size)
+                translations[i].trim() else ""
+
+            Column(
+                Modifier
                     .fillMaxWidth()
                     .clickable(enabled = vm.duration > 0) {
                         vm.seekTo(lines[i].timeMs.toFloat() / vm.duration)
                     }
-                    .padding(vertical = 8.dp, horizontal = 8.dp)
-            )
+                    .padding(vertical = 6.dp, horizontal = 8.dp)
+            ) {
+                Text(
+                    text = lines[i].text.ifBlank { "♪" },
+                    color = if (active) Color.White else TextSecondary.copy(alpha = 0.75f),
+                    fontSize = if (active) 19.sp else 15.sp,
+                    fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
+                    lineHeight = if (active) 26.sp else 22.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (tr.isNotBlank()) {
+                    Text(
+                        text = tr,
+                        color = if (active) Color.White.copy(alpha = 0.9f)
+                        else TextSecondary.copy(alpha = 0.55f),
+                        fontSize = if (active) 14.sp else 13.sp,
+                        fontWeight = FontWeight.Normal,
+                        lineHeight = 18.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
         }
     }
 }
