@@ -103,13 +103,13 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
                     Text(status, color = TextSecondary, fontSize = 12.sp)
                     Spacer(Modifier.height(8.dp))
                 }
-                val pending = MusicRepository.pendingCount()
+                            val pending = remember(songs) { MusicRepository.pendingCount() }
                 if (pending > 0) {
                     Text("🔎 Procesando carátulas y géneros… faltan $pending canciones",
                         color = Purple, fontSize = 12.sp)
                     Spacer(Modifier.height(8.dp))
                 }
-                val onlinePending = MusicRepository.pendingOnlineCount()
+                            val onlinePending = remember(songs) { MusicRepository.pendingOnlineCount() }
                 if (pending == 0 && onlinePending > 0) {
                     Text("🌐 Buscando géneros en internet… faltan $onlinePending canciones",
                         color = Cyan, fontSize = 12.sp)
