@@ -39,6 +39,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.musica.data.DownloadRepository
 import com.example.musica.data.FavoritesRepository
+import com.example.musica.data.HistoryRepository
 import com.example.musica.data.MusicRepository
 import com.example.musica.data.PlayStatsRepository
 import com.example.musica.data.PlaylistRepository
@@ -52,6 +53,7 @@ import com.example.musica.ui.screens.DetailScreen
 import com.example.musica.ui.screens.DownloadsScreen
 import com.example.musica.ui.screens.ExploreScreen
 import com.example.musica.ui.screens.GenresScreen
+import com.example.musica.ui.screens.HistoryScreen
 import com.example.musica.ui.screens.HomeScreen
 import com.example.musica.ui.screens.LibraryScreen
 import com.example.musica.ui.screens.NowPlayingScreen
@@ -79,6 +81,7 @@ class MainActivity : AppCompatActivity() {
         PlayStatsRepository.init(applicationContext)
         FavoritesRepository.init(applicationContext)
         DownloadRepository.init(applicationContext)
+        HistoryRepository.init(applicationContext)
         setContent {
             MusicaTheme {
                 AppRoot()
@@ -106,10 +109,7 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
         }
     }
 
-    // ============================================================
-    // BUCLE AUTOMÁTICO — arranca cuando la biblioteca cargó.
-    // En MODO OFFLINE no hace trabajo de red (solo espera).
-    // ============================================================
+    // BUCLE AUTOMÁTICO — arranca cuando la biblioteca cargó
     val ready by MusicRepository.ready.collectAsState()
     LaunchedEffect(ready) {
         if (!ready) return@LaunchedEffect
@@ -119,7 +119,6 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
         }
         var cycles = 0
         while (isActive) {
-            // Modo offline: sin trabajo de red mientras esté activo
             if (DownloadRepository.offlineMode.value) {
                 delay(3000)
                 continue
@@ -141,7 +140,6 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
                 }
             }
             cycles++
-            // Revisa el canal con menos frecuencia mientras hay trabajo
             if (cycles % 15 == 0) {
                 try { MusicRepository.sync() } catch (_: Exception) {}
             }
@@ -166,6 +164,7 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
             composable("library") { LibraryScreen(nav, vm) }
             composable("player") { NowPlayingScreen(nav, vm) }
             composable("queue") { QueueScreen(nav, vm) }
+            composable("history") { HistoryScreen(nav, vm) }
             composable("playlists") { PlaylistsScreen(nav) }
             composable("playlist/{id}") { b ->
                 DetailScreen(nav, vm, b.arguments?.getString("id").orEmpty())
