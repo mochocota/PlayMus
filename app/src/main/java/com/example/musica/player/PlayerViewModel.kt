@@ -34,6 +34,7 @@ import com.google.android.gms.cast.framework.media.RemoteMediaClient
 import com.google.android.gms.cast.MediaMetadata as CastMediaMetadata
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -50,7 +51,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private var pendingPlay: (() -> Unit)? = null
     private val directExecutor: Executor = Executor { it.run() }
 
-    // ---------- Google Cast (Chromecast / bocinas / TVs compatibles) ----------
+    // ---------- Google Cast ----------
     private var castContext: CastContext? = null
     private val castSession: CastSession? get() = castContext?.sessionManager?.currentCastSession
     private val remoteClient: RemoteMediaClient? get() = castSession?.remoteMediaClient
@@ -74,10 +75,15 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     var repeatOne by mutableStateOf(false)
         private set
 
-    // ============================================================
-    // Los listeners se declaran ANTES del bloque init,
-    // porque init los utiliza.
-    // ============================================================
+    // ---------- Sleep Timer ----------
+    // millisRemaining = 0 → sin temporizador activo
+    var sleepTimerRemaining by mutableStateOf(0L)
+        private set
+    var sleepTimerEndOfSong by mutableStateOf(false)
+        private set
+    private var sleepJob: Job? = null
+
+    // Los listeners se declaran ANTES del bloque init
     private val sessionListener = object : SessionManagerListener<CastSession> {
         override fun onSessionStarted(session: CastSession, sessionId: String) { onCastChanged(true) }
         override fun onSessionResumed(session: CastSession, wasSuspended: Boolean) { onCastChanged(true) }
@@ -135,17 +141,14 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             controller?.pause()
             lastCastSongId = -1
             remoteClient?.addListener(remoteListener)
-            // Transfiere lo que suena a la bocina/TV
             current?.let { sendToCast(it, currentList) }
         } else {
             remoteClient?.removeListener(remoteListener)
             lastCastSongId = -1
-            // Al desconectar el cast, retoma en el teléfono
             if (current != null) startPlayback()
         }
     }
 
-    // Envía la cola completa al Chromecast (resuelve las URLs de Telegram)
     private fun sendToCast(song: Song, list: List<Song>) {
         val rc = remoteClient ?: return
         viewModelScope.launch(Dispatchers.IO) {
@@ -174,8 +177,6 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // Construye el MediaInfo con la URL pública real (para que la bocina la descargue).
-    // Usa el caché de URLs: si la canción sonó hace poco, la respuesta es instantánea.
     private fun buildCastMediaInfo(s: Song): MediaInfo {
         val url = if (s.fromTelegram && s.fileId.isNotEmpty()) {
             try {
@@ -198,7 +199,6 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             .build()
     }
 
-    // ---------- Estado unificado (local o cast) ----------
     private fun refreshProgress() {
         if (casting) {
             val rc = remoteClient ?: return
@@ -286,7 +286,6 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun toMediaItem(s: Song): MediaItem {
-        // Si la canción está descargada, reproduce el archivo local (offline)
         val local = DownloadRepository.downloadedFile(s.id)
         val uri = when {
             local != null -> Uri.fromFile(local).toString()
@@ -307,7 +306,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             .build()
     }
 
-    // ---------- Controles (redirigen al cast o al local) ----------
+    // ---------- Controles ----------
     fun toggle() {
         if (casting) {
             val rc = remoteClient ?: return
@@ -337,7 +336,6 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleRepeat() {
         repeatOne = !repeatOne
         if (casting) {
-            // En el SDK de Cast, repetir una pista es REPEAT_MODE_REPEAT_SINGLE
             remoteClient?.queueSetRepeatMode(
                 if (repeatOne) MediaStatus.REPEAT_MODE_REPEAT_SINGLE
                 else MediaStatus.REPEAT_MODE_REPEAT_OFF,
@@ -356,7 +354,79 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         else controller?.seekTo(target)
     }
 
+    // ============================================================
+    // SLEEP TIMER
+    // ============================================================
+
+    // Inicia la cuenta regresiva (minutos). Si ya había una, la reemplaza.
+    fun startSleepTimer(minutes: Int) {
+        cancelSleepTimer()
+        sleepTimerEndOfSong = false
+        val total = minutes * 60_000L
+        sleepTimerRemaining = total
+        sleepJob = viewModelScope.launch {
+            val step = 1000L
+            var left = total
+            while (left > 0 && isActive) {
+                delay(step)
+                left -= step
+                sleepTimerRemaining = left
+            }
+            if (isActive && sleepTimerRemaining <= 0) {
+                // Pausa suave: no cancela la cola, solo detiene el audio
+                pauseForSleep()
+            }
+        }
+    }
+
+    // Detiene al final de la canción actual
+    fun sleepAtEndOfSong() {
+        cancelSleepTimer()
+        sleepTimerEndOfSong = true
+        val c = controller
+        if (casting) {
+            // En cast no hay callback sencillo: temporizador aproximado
+            val left = (duration - position).coerceAtLeast(0L)
+            sleepTimerRemaining = left
+            sleepJob = viewModelScope.launch {
+                while (sleepTimerRemaining > 0 && isActive) {
+                    delay(1000)
+                    sleepTimerRemaining -= 1000
+                }
+                if (isActive) pauseForSleep()
+            }
+        } else if (c != null && duration > 0) {
+            val left = (duration - position).coerceAtLeast(0L)
+            sleepTimerRemaining = left
+            sleepJob = viewModelScope.launch {
+                while (sleepTimerRemaining > 0 && isActive) {
+                    delay(1000)
+                    sleepTimerRemaining -= 1000
+                    if (c.isPlaying) sleepTimerRemaining = (duration - c.currentPosition)
+                        .coerceAtLeast(0L)
+                }
+                if (isActive) pauseForSleep()
+            }
+        }
+    }
+
+    fun cancelSleepTimer() {
+        sleepJob?.cancel()
+        sleepJob = null
+        sleepTimerRemaining = 0L
+        sleepTimerEndOfSong = false
+    }
+
+    private fun pauseForSleep() {
+        try {
+            if (casting) remoteClient?.pause() else controller?.pause()
+            sleepTimerRemaining = 0L
+            sleepTimerEndOfSong = false
+        } catch (_: Exception) {}
+    }
+
     override fun onCleared() {
+        sleepJob?.cancel()
         MediaController.releaseFuture(controllerFuture)
     }
 }
