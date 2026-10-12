@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import com.example.musica.data.DownloadRepository
 import com.example.musica.data.MusicRepository
+import com.example.musica.data.Song
 import com.example.musica.player.PlayerViewModel
 import com.example.musica.ui.components.CoverImage
 import com.example.musica.ui.components.MiniPlayer
@@ -55,6 +56,16 @@ private fun norm(s: String): String =
     Normalizer.normalize(s, Normalizer.Form.NFD)
         .replace(Regex("\\p{M}+"), "").lowercase().trim()
 
+// Elemento pre-normalizado: la búsqueda ya no recalcula 4
+// normalizaciones por canción en cada tecla presionada
+private data class SearchItem(
+    val song: Song,
+    val title: String,
+    val artist: String,
+    val album: String,
+    val genre: String
+)
+
 @Composable
 fun SearchScreen(nav: NavHostController, vm: PlayerViewModel) {
     val songsRaw by MusicRepository.songs.collectAsState()
@@ -62,6 +73,13 @@ fun SearchScreen(nav: NavHostController, vm: PlayerViewModel) {
     // En modo offline: solo las descargadas
     val songs = if (offline) songsRaw.filter { DownloadRepository.isDownloaded(it.id) }
     else songsRaw
+
+    // Índice precalculado (se reconstruye solo si cambia la biblioteca)
+    val index = remember(songs) {
+        songs.map {
+            SearchItem(it, norm(it.title), norm(it.artist), norm(it.album), norm(it.genre))
+        }
+    }
 
     var query by rememberSaveable { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
@@ -119,12 +137,12 @@ fun SearchScreen(nav: NavHostController, vm: PlayerViewModel) {
             } else {
                 val nq = norm(query)
 
-                // Hasta 3 sugerencias que se acercan a lo escrito
+                // Hasta 3 sugerencias (búsqueda sobre el índice precalculado)
                 val suggestions = buildList {
-                    songs.forEach { if (norm(it.title).contains(nq)) add(it.title) }
-                    songs.forEach { if (norm(it.artist).contains(nq)) add(it.artist) }
-                    songs.forEach { if (it.album.isNotBlank() && norm(it.album).contains(nq)) add(it.album) }
-                    songs.forEach { if (norm(it.genre).contains(nq)) add(it.genre) }
+                    index.forEach { if (it.title.contains(nq)) add(it.song.title) }
+                    index.forEach { if (it.artist.contains(nq)) add(it.song.artist) }
+                    index.forEach { if (it.album.isNotEmpty() && it.album.contains(nq)) add(it.song.album) }
+                    index.forEach { if (it.genre.contains(nq)) add(it.song.genre) }
                 }.distinctBy { norm(it) }.take(3)
 
                 Text("Sugerencias", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
@@ -147,10 +165,10 @@ fun SearchScreen(nav: NavHostController, vm: PlayerViewModel) {
                 Spacer(Modifier.height(16.dp))
 
                 // Resultados en vivo (cuadrícula de 3 columnas)
-                val results = songs.filter {
-                    norm(it.title).contains(nq) || norm(it.artist).contains(nq) ||
-                            norm(it.album).contains(nq) || norm(it.genre).contains(nq)
-                }
+                val results = index.filter {
+                    it.title.contains(nq) || it.artist.contains(nq) ||
+                            it.album.contains(nq) || it.genre.contains(nq)
+                }.map { it.song }
                 Text("Resultados (${results.size})",
                     color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 Spacer(Modifier.height(10.dp))
