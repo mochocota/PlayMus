@@ -1,5 +1,6 @@
 package com.example.musica.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -9,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
@@ -28,10 +30,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
+import com.example.musica.data.DownloadRepository
 import com.example.musica.data.FavoritesRepository
 import com.example.musica.data.MusicRepository
 import com.example.musica.data.PlaylistRepository
@@ -42,6 +46,7 @@ import com.example.musica.ui.components.CoverImage
 import com.example.musica.ui.components.MiniPlayer
 import com.example.musica.ui.theme.CardDark
 import com.example.musica.ui.theme.CardLighter
+import com.example.musica.ui.theme.Cyan
 import com.example.musica.ui.theme.GradientBrush
 import com.example.musica.ui.theme.NavyBg
 import com.example.musica.ui.theme.Pink
@@ -56,6 +61,9 @@ fun UserPlaylistScreen(nav: NavHostController, vm: PlayerViewModel, playlistId: 
     val allSongs by MusicRepository.songs.collectAsState()
     val favIds by FavoritesRepository.ids.collectAsState()
     val lists by PlaylistRepository.playlists.collectAsState()
+    val dlVersion by DownloadRepository.version.collectAsState()
+    val batch by DownloadRepository.batch.collectAsState()
+    val context = LocalContext.current
 
     var songToRemove by remember { mutableStateOf<Song?>(null) }
     var showDeleteList by remember { mutableStateOf(false) }
@@ -74,6 +82,11 @@ fun UserPlaylistScreen(nav: NavHostController, vm: PlayerViewModel, playlistId: 
 
     val title = if (isFavorites) "Favoritos" else (pl?.name ?: "Lista")
 
+    // Cuántas de esta lista ya están descargadas
+    val already = remember(dlVersion, songs) {
+        songs.count { DownloadRepository.isDownloaded(it.id) }
+    }
+
     Column(Modifier.fillMaxSize().background(NavyBg)) {
         Column(Modifier.weight(1f).padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -89,17 +102,16 @@ fun UserPlaylistScreen(nav: NavHostController, vm: PlayerViewModel, playlistId: 
                     }
                 }
             }
-            Text("${songs.size} canciones", color = TextSecondary, fontSize = 13.sp,
-                modifier = Modifier.padding(start = 24.dp))
+            Text("${songs.size} canciones · $already sin conexión", color = TextSecondary,
+                fontSize = 13.sp, modifier = Modifier.padding(start = 24.dp))
             Spacer(Modifier.height(10.dp))
 
-            // ---------- Botones: Reproducir todo / Aleatorio ----------
             if (songs.isNotEmpty()) {
+                // ---------- Reproducir todo / Aleatorio ----------
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    // Reproducir todo (en orden)
                     Box(
                         Modifier.weight(1f).height(44.dp)
                             .clip(RoundedCornerShape(12.dp))
@@ -115,13 +127,11 @@ fun UserPlaylistScreen(nav: NavHostController, vm: PlayerViewModel, playlistId: 
                                 fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
-                    // Aleatorio (mezcla la lista; no se repite ninguna canción)
                     Box(
                         Modifier.weight(1f).height(44.dp)
                             .clip(RoundedCornerShape(12.dp))
                             .background(CardLighter)
                             .clickable {
-                                // Apaga "repetir una pista" para garantizar que no se repita nada
                                 if (vm.repeatOne) vm.toggleRepeat()
                                 val mezcla = songs.shuffled()
                                 vm.play(mezcla.first(), mezcla)
@@ -135,6 +145,33 @@ fun UserPlaylistScreen(nav: NavHostController, vm: PlayerViewModel, playlistId: 
                             Text("Aleatorio", color = Color.White,
                                 fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                         }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                // ---------- Descargar todas ----------
+                Box(
+                    Modifier.fillMaxWidth().height(44.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(CardLighter)
+                        .clickable(enabled = batch == null) {
+                            DownloadRepository.startDownloadAll(songs) { msg ->
+                                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Download, null,
+                            tint = Cyan, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            if (batch != null)
+                                "Descargando ${batch!!.first}/${batch!!.second}…"
+                            else
+                                "Descargar todas ($already/${songs.size} listas)",
+                            color = Color.White, fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
                 Spacer(Modifier.height(8.dp))
@@ -175,7 +212,6 @@ fun UserPlaylistScreen(nav: NavHostController, vm: PlayerViewModel, playlistId: 
         if (vm.current != null) MiniPlayer(vm) { nav.navigate("player") }
     }
 
-    // Confirmación para quitar una canción
     songToRemove?.let { s ->
         AlertDialog(
             onDismissRequest = { songToRemove = null },
@@ -202,7 +238,6 @@ fun UserPlaylistScreen(nav: NavHostController, vm: PlayerViewModel, playlistId: 
         )
     }
 
-    // Confirmación para eliminar la lista completa
     if (showDeleteList && pl != null) {
         AlertDialog(
             onDismissRequest = { showDeleteList = false },
