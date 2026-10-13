@@ -180,6 +180,29 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                         val fresh = MusicRepository.songs.value.firstOrNull { it.id == song.id } ?: song
 
+                        // ---------- Título + Álbum arriba de la carátula ----------
+                        Text(
+                            song.title,
+                            color = Color.White,
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 2,
+                            lineHeight = 26.sp,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        if (song.album.isNotBlank()) {
+                            Text(
+                                song.album,
+                                color = TextSecondary,
+                                fontSize = 13.sp,
+                                maxLines = 1,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                        Spacer(Modifier.height(10.dp))
+
                         // ---------- Carátula (tamaño original) con Cast overlay ----------
                         Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
                             CoverImage(fresh, Modifier.fillMaxWidth().aspectRatio(1f),
@@ -225,17 +248,15 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                                 }
                             }
                         }
-                        Spacer(Modifier.height(16.dp))
+                        Spacer(Modifier.height(12.dp))
 
-                        // ---------- Fila título: Título · Sleep · Descarga · Letra · Corazón ----------
+                        // ---------- Fila: Artista · Sleep · Descarga · Letra · Corazón ----------
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
 
-                            // Título (debajo de la carátula)
+                            // Artista (debajo de la carátula)
                             Column(Modifier.weight(1f)) {
-                                Text(song.title, color = Color.White, fontSize = 20.sp,
-                                    fontWeight = FontWeight.Bold, maxLines = 1)
-                                Text("${song.album.ifBlank { song.genre }} · ${song.artist}",
-                                    color = TextSecondary, fontSize = 13.sp, maxLines = 1)
+                                Text(song.artist, color = TextSecondary,
+                                    fontSize = 13.sp, maxLines = 1)
                             }
 
                             // Sleep Timer
