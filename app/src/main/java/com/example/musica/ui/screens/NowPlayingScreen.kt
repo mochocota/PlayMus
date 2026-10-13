@@ -1,6 +1,5 @@
 package com.example.musica.ui.screens
 
-import android.content.Intent
 import android.view.ContextThemeWrapper
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
@@ -40,7 +39,6 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Translate
@@ -62,7 +60,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -189,190 +186,188 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                         Text("Elige una canción para empezar", color = TextSecondary)
                     }
                 } else {
-                    // ---------- Carátula con Cast overlay ----------
-                    Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
-                        val fresh = MusicRepository.songs.value.firstOrNull { it.id == song.id } ?: song
-                        CoverImage(fresh, Modifier.fillMaxWidth().aspectRatio(1f),
-                            corner = 14.dp, sample = 1)
+                    // Espacio flexible ARRIBA (igual que abajo)
+                    Spacer(Modifier.weight(1f))
 
-                        // Cast dentro de la carátula, arriba a la derecha
-                        Box(
-                            Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(10.dp)
-                                .size(34.dp)
-                                .clip(CircleShape)
-                                .background(Color.Black.copy(alpha = 0.55f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (castUsable) {
-                                AndroidView(
-                                    modifier = Modifier.size(26.dp),
-                                    factory = { ctx ->
-                                        try {
-                                            val themed = ContextThemeWrapper(
-                                                ctx,
-                                                androidx.appcompat.R.style.Theme_AppCompat_NoActionBar
-                                            )
-                                            MediaRouteButton(themed).apply {
-                                                CastButtonFactory.setUpMediaRouteButton(ctx, this)
-                                                visibility = android.view.View.VISIBLE
+                    // ---------- Bloque central ----------
+                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+
+                        // Carátula con Cast overlay
+                        Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
+                            val fresh = MusicRepository.songs.value.firstOrNull { it.id == song.id } ?: song
+                            CoverImage(fresh, Modifier.fillMaxWidth().aspectRatio(1f),
+                                corner = 14.dp, sample = 1)
+
+                            // Cast dentro de la carátula, arriba a la derecha
+                            Box(
+                                Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(10.dp)
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Black.copy(alpha = 0.55f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (castUsable) {
+                                    AndroidView(
+                                        modifier = Modifier.size(26.dp),
+                                        factory = { ctx ->
+                                            try {
+                                                val themed = ContextThemeWrapper(
+                                                    ctx,
+                                                    androidx.appcompat.R.style.Theme_AppCompat_NoActionBar
+                                                )
+                                                MediaRouteButton(themed).apply {
+                                                    CastButtonFactory.setUpMediaRouteButton(ctx, this)
+                                                    visibility = android.view.View.VISIBLE
+                                                }
+                                            } catch (_: Exception) {
+                                                android.view.View(ctx)
                                             }
-                                        } catch (_: Exception) {
-                                            android.view.View(ctx)
                                         }
+                                    )
+                                } else {
+                                    IconButton(onClick = {
+                                        Toast.makeText(context,
+                                            "Cast no disponible en este dispositivo",
+                                            Toast.LENGTH_SHORT).show()
+                                    }) {
+                                        Icon(Icons.Filled.Cast, "Cast", tint = Color.White,
+                                            modifier = Modifier.size(18.dp))
                                     }
-                                )
-                            } else {
-                                IconButton(onClick = {
-                                    Toast.makeText(context,
-                                        "Cast no disponible en este dispositivo",
-                                        Toast.LENGTH_SHORT).show()
-                                }) {
-                                    Icon(Icons.Filled.Cast, "Cast", tint = Color.White,
-                                        modifier = Modifier.size(18.dp))
                                 }
                             }
                         }
-                    }
 
-                    Spacer(Modifier.height(20.dp))
+                        Spacer(Modifier.height(20.dp))
 
-                    // ---------- Título + Artista | Compartir + Corazón ----------
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(song.title, color = Color.White, fontSize = 22.sp,
-                                fontWeight = FontWeight.Bold, maxLines = 2, lineHeight = 26.sp)
-                            Text(song.artist, color = TextSecondary, fontSize = 14.sp, maxLines = 1)
-                        }
+                        // ---------- Título + Artista | Letra + Corazón ----------
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(song.title, color = Color.White, fontSize = 22.sp,
+                                    fontWeight = FontWeight.Bold, maxLines = 2, lineHeight = 26.sp)
+                                Text(song.artist, color = TextSecondary, fontSize = 14.sp, maxLines = 1)
+                            }
 
-                        // Compartir (pill con borde)
-                        Box(
-                            Modifier
-                                .size(46.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .border(1.dp, TextSecondary.copy(alpha = 0.4f), RoundedCornerShape(14.dp))
-                                .clickable {
-                                    try {
-                                        val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                                            type = "text/plain"
-                                            putExtra(Intent.EXTRA_TEXT,
-                                                "Escuchando «${song.title}» de ${song.artist} en Melodix 🎵")
-                                        }
-                                        context.startActivity(
-                                            Intent.createChooser(sendIntent, "Compartir"))
-                                    } catch (_: Exception) {}
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Filled.Share, "Compartir", tint = Color.White,
-                                modifier = Modifier.size(20.dp))
-                        }
-                        Spacer(Modifier.width(8.dp))
-
-                        // Corazón (pill con borde)
-                        Box(
-                            Modifier
-                                .size(46.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .border(1.dp, TextSecondary.copy(alpha = 0.4f), RoundedCornerShape(14.dp))
-                                .clickable {
-                                    val nowFav = FavoritesRepository.toggle(song.id)
-                                    favMsg = if (nowFav) "Agregado a favoritos"
-                                    else "Eliminado de favoritos"
-                                    showFavAnim = true
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(if (liked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                                null, tint = if (liked) Pink else Color.White,
-                                modifier = Modifier.size(20.dp))
-                        }
-                    }
-
-                    Spacer(Modifier.height(10.dp))
-
-                    // ---------- Línea de tiempo ----------
-                    val rawProgress = if (dragging) dragValue
-                    else if (vm.duration > 0) vm.position.toFloat() / vm.duration else 0f
-                    val progress = if (rawProgress.isNaN() || rawProgress < 0f) 0f
-                    else rawProgress.coerceAtMost(1f)
-
-                    Slider(
-                        value = progress,
-                        onValueChange = { dragging = true; dragValue = it },
-                        onValueChangeFinished = { vm.seekTo(dragValue); dragging = false },
-                        colors = SliderDefaults.colors(
-                            thumbColor = Color.White,
-                            activeTrackColor = Color.White,
-                            inactiveTrackColor = TrackColor
-                        )
-                    )
-                    Row(Modifier.fillMaxWidth()) {
-                        Text(fmtMillis(vm.position), color = TextSecondary, fontSize = 12.sp)
-                        Spacer(Modifier.weight(1f))
-                        Text(fmtMillis(vm.duration), color = TextSecondary, fontSize = 12.sp)
-                    }
-
-                    Spacer(Modifier.height(6.dp))
-
-                    // ---------- Controles: ⏮ Reproducir ⏭ ----------
-                    Row(Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically) {
-
-                        // Anterior (círculo oscuro)
-                        Box(
-                            Modifier
-                                .size(56.dp)
-                                .clip(CircleShape)
-                                .background(CardLighter)
-                                .clickable { vm.prev() },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Filled.SkipPrevious, "Anterior",
-                                tint = Color.White, modifier = Modifier.size(28.dp))
-                        }
-
-                        // Reproducir / Pausar (degradado de siempre)
-                        Box(
-                            Modifier
-                                .height(56.dp)
-                                .clip(RoundedCornerShape(28.dp))
-                                .background(GradientBrush)
-                                .clickable { vm.toggle() },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 20.dp)
+                            // Letra (pill con borde)
+                            Box(
+                                Modifier
+                                    .size(46.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .border(1.dp, TextSecondary.copy(alpha = 0.4f), RoundedCornerShape(14.dp))
+                                    .clickable { showLyrics = true },
+                                contentAlignment = Alignment.Center
                             ) {
-                                Icon(if (vm.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                                    null, tint = Color.White, modifier = Modifier.size(24.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text(if (vm.isPlaying) "Pausar" else "Reproducir",
-                                    color = Color.White, fontSize = 16.sp,
-                                    fontWeight = FontWeight.SemiBold)
+                                Icon(Icons.Filled.Lyrics, "Ver letra", tint = Color.White,
+                                    modifier = Modifier.size(20.dp))
+                            }
+                            Spacer(Modifier.width(8.dp))
+
+                            // Corazón (pill con borde)
+                            Box(
+                                Modifier
+                                    .size(46.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .border(1.dp, TextSecondary.copy(alpha = 0.4f), RoundedCornerShape(14.dp))
+                                    .clickable {
+                                        val nowFav = FavoritesRepository.toggle(song.id)
+                                        favMsg = if (nowFav) "Agregado a favoritos"
+                                        else "Eliminado de favoritos"
+                                        showFavAnim = true
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(if (liked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                                    null, tint = if (liked) Pink else Color.White,
+                                    modifier = Modifier.size(20.dp))
                             }
                         }
 
-                        // Siguiente (círculo oscuro)
-                        Box(
-                            Modifier
-                                .size(56.dp)
-                                .clip(CircleShape)
-                                .background(CardLighter)
-                                .clickable { vm.next() },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(Icons.Filled.SkipNext, "Siguiente",
-                                tint = Color.White, modifier = Modifier.size(28.dp))
+                        Spacer(Modifier.height(10.dp))
+
+                        // ---------- Línea de tiempo ----------
+                        val rawProgress = if (dragging) dragValue
+                        else if (vm.duration > 0) vm.position.toFloat() / vm.duration else 0f
+                        val progress = if (rawProgress.isNaN() || rawProgress < 0f) 0f
+                        else rawProgress.coerceAtMost(1f)
+
+                        Slider(
+                            value = progress,
+                            onValueChange = { dragging = true; dragValue = it },
+                            onValueChangeFinished = { vm.seekTo(dragValue); dragging = false },
+                            colors = SliderDefaults.colors(
+                                thumbColor = Color.White,
+                                activeTrackColor = Color.White,
+                                inactiveTrackColor = TrackColor
+                            )
+                        )
+                        Row(Modifier.fillMaxWidth()) {
+                            Text(fmtMillis(vm.position), color = TextSecondary, fontSize = 12.sp)
+                            Spacer(Modifier.weight(1f))
+                            Text(fmtMillis(vm.duration), color = TextSecondary, fontSize = 12.sp)
+                        }
+
+                        Spacer(Modifier.height(6.dp))
+
+                        // ---------- Controles: ⏮ Reproducir ⏭ ----------
+                        Row(Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically) {
+
+                            // Anterior (círculo oscuro)
+                            Box(
+                                Modifier
+                                    .size(56.dp)
+                                    .clip(CircleShape)
+                                    .background(CardLighter)
+                                    .clickable { vm.prev() },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Filled.SkipPrevious, "Anterior",
+                                    tint = Color.White, modifier = Modifier.size(28.dp))
+                            }
+
+                            // Reproducir / Pausar (degradado de siempre)
+                            Box(
+                                Modifier
+                                    .height(56.dp)
+                                    .clip(RoundedCornerShape(28.dp))
+                                    .background(GradientBrush)
+                                    .clickable { vm.toggle() },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 20.dp)
+                                ) {
+                                    Icon(if (vm.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                        null, tint = Color.White, modifier = Modifier.size(24.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(if (vm.isPlaying) "Pausar" else "Reproducir",
+                                        color = Color.White, fontSize = 16.sp,
+                                        fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+
+                            // Siguiente (círculo oscuro)
+                            Box(
+                                Modifier
+                                    .size(56.dp)
+                                    .clip(CircleShape)
+                                    .background(CardLighter)
+                                    .clickable { vm.next() },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Filled.SkipNext, "Siguiente",
+                                    tint = Color.White, modifier = Modifier.size(28.dp))
+                            }
                         }
                     }
 
-                    Spacer(Modifier.height(18.dp))
+                    // Espacio flexible ABAJO (igual que arriba)
+                    Spacer(Modifier.weight(1f))
 
-                    // ---------- Fila inferior: Cola Sleep Shuffle EQ Descarga ⋮ ----------
+                    // ---------- Fila inferior: Sleep EQ Shuffle Repeat Cola · Descarga ----------
                     Row(Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically) {
 
@@ -380,26 +375,26 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                             horizontalArrangement = Arrangement.SpaceEvenly,
                             verticalAlignment = Alignment.CenterVertically) {
 
-                            // Cola
-                            BottomButton(Icons.AutoMirrored.Filled.QueueMusic,
-                                active = false) { nav.navigate("queue") }
-
                             // Sleep
                             BottomButton(Icons.Filled.NightsStay,
                                 active = vm.sleepTimerRemaining > 0 || vm.sleepTimerEndOfSong
                             ) { showSleep = true }
 
-                            // Shuffle
-                            BottomButton(Icons.Filled.Shuffle,
-                                active = vm.shuffle) { vm.toggleShuffle() }
-
                             // Ecualizador
                             BottomButton(Icons.Filled.Equalizer,
                                 active = false) { showEq = true }
 
-                            // Repeat
+                            // Aleatorio (Shuffle)
+                            BottomButton(Icons.Filled.Shuffle,
+                                active = vm.shuffle) { vm.toggleShuffle() }
+
+                            // Repetir
                             BottomButton(Icons.Filled.Repeat,
                                 active = vm.repeatOne) { vm.toggleRepeat() }
+
+                            // Cola
+                            BottomButton(Icons.AutoMirrored.Filled.QueueMusic,
+                                active = false) { nav.navigate("queue") }
                         }
 
                         // ---------- Descarga (con estados visibles) ----------
