@@ -179,9 +179,7 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                     textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()
                 )
 
-                // Espacio flexible ARRIBA (la mitad del reparto: encabezado
-                // queda más cerca de la carátula)
-                Spacer(Modifier.height(8.dp))
+                // Espacio flexible 1 (igual a los demás)
                 Spacer(Modifier.weight(1f))
 
                 if (song == null) {
@@ -364,8 +362,7 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                         }
                     }
 
-                    // Espacio flexible ABAJO (la mitad del reparto: los pills
-                    // y la descarga quedan más cerca del reproductor)
+                    // Espacio flexible 2 (igual a los demás)
                     Spacer(Modifier.weight(1f))
 
                     // ---------- Fila inferior: Sleep EQ Aleatorio Repetir Cola · Descarga ----------
@@ -440,11 +437,11 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                             }
                         }
                     }
-                }
 
-                // Espacio flexible final: absorbe el espacio liberado al
-                // compactar arriba (los pills quedan más arriba en pantalla)
-                Spacer(Modifier.weight(2f))
+                    // Espacio flexible 3 (igual a los demás):
+                    // el espacio de abajo queda idéntico al de arriba
+                    Spacer(Modifier.weight(1f))
+                }
             }
         }
 
