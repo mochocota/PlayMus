@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -55,6 +56,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -180,29 +182,6 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                         val fresh = MusicRepository.songs.value.firstOrNull { it.id == song.id } ?: song
 
-                        // ---------- Título + Álbum arriba de la carátula ----------
-                        Text(
-                            song.title,
-                            color = Color.White,
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 2,
-                            lineHeight = 26.sp,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        if (song.album.isNotBlank()) {
-                            Text(
-                                song.album,
-                                color = TextSecondary,
-                                fontSize = 13.sp,
-                                maxLines = 1,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-                        Spacer(Modifier.height(10.dp))
-
                         // ---------- Carátula (tamaño original) con Cast overlay ----------
                         Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
                             CoverImage(fresh, Modifier.fillMaxWidth().aspectRatio(1f),
@@ -248,22 +227,14 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                                 }
                             }
                         }
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(14.dp))
 
-                        // ---------- Fila: Artista · Sleep · Descarga · Letra · Corazón ----------
+                        // ---------- Título + Artista (izquierda) · Descarga · Corazón ----------
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-
-                            // Artista (debajo de la carátula)
                             Column(Modifier.weight(1f)) {
-                                Text(song.artist, color = TextSecondary,
-                                    fontSize = 13.sp, maxLines = 1)
-                            }
-
-                            // Sleep Timer
-                            IconButton(onClick = { showSleep = true }) {
-                                Icon(Icons.Filled.NightsStay, "Temporizador de sueño",
-                                    tint = if (vm.sleepTimerRemaining > 0 || vm.sleepTimerEndOfSong)
-                                        Cyan else Color.White)
+                                Text(song.title, color = Color.White, fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold, maxLines = 1)
+                                Text(song.artist, color = TextSecondary, fontSize = 13.sp, maxLines = 1)
                             }
 
                             // Descarga
@@ -295,12 +266,6 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                                     else -> Icon(Icons.Filled.Download,
                                         "Descargar", tint = Color.White)
                                 }
-                            }
-
-                            // Letra (entre descarga y corazón)
-                            IconButton(onClick = { showLyrics = true }) {
-                                Icon(Icons.Filled.Lyrics, "Ver letra",
-                                    tint = Color.White)
                             }
 
                             // Corazón (favorito)
@@ -366,44 +331,20 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
 
                     Spacer(Modifier.weight(1f))
 
-                    // ---------- Los 4 restantes, ordenados ----------
+                    // ---------- Los 6 botones estilo pastilla ----------
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly,
                         verticalAlignment = Alignment.CenterVertically) {
 
-                        // Ecualizador
-                        Column(horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.width(70.dp)
-                                .clickable { showEq = true }) {
-                            Icon(Icons.Filled.Equalizer, null, tint = Color.White,
-                                modifier = Modifier.size(22.dp))
-                            Text("Ecualizador", color = TextSecondary, fontSize = 9.sp)
-                        }
-
-                        // Historial
-                        Column(horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.width(70.dp)
-                                .clickable { nav.navigate("history") }) {
-                            Icon(Icons.Filled.History, null, tint = Color.White,
-                                modifier = Modifier.size(22.dp))
-                            Text("Historial", color = TextSecondary, fontSize = 9.sp)
-                        }
-
-                        // Añadir a lista
-                        Column(horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.width(70.dp)
-                                .clickable { songToAdd = song }) {
-                            Icon(Icons.Filled.PlaylistAdd, null, tint = Color.White,
-                                modifier = Modifier.size(22.dp))
-                            Text("A lista", color = TextSecondary, fontSize = 9.sp)
-                        }
-
-                        // Cola
-                        Column(horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.width(70.dp)
-                                .clickable { nav.navigate("queue") }) {
-                            Icon(Icons.AutoMirrored.Filled.QueueMusic, null, tint = Color.White,
-                                modifier = Modifier.size(22.dp))
-                            Text("Cola", color = TextSecondary, fontSize = 9.sp)
+                        PillButton(Icons.Filled.Lyrics, "Letra") { showLyrics = true }
+                        PillButton(Icons.Filled.NightsStay, "Sleep",
+                            tint = if (vm.sleepTimerRemaining > 0 || vm.sleepTimerEndOfSong)
+                                Cyan else Color.White
+                        ) { showSleep = true }
+                        PillButton(Icons.Filled.Equalizer, "Ecualizador") { showEq = true }
+                        PillButton(Icons.Filled.History, "Historial") { nav.navigate("history") }
+                        PillButton(Icons.Filled.PlaylistAdd, "A lista") { songToAdd = song }
+                        PillButton(Icons.AutoMirrored.Filled.QueueMusic, "Cola") {
+                            nav.navigate("queue")
                         }
                     }
                     Spacer(Modifier.height(14.dp))
@@ -464,6 +405,34 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                 TextButton(onClick = { showDeleteDl = false }) { Text("Cancelar", color = Purple) }
             }
         )
+    }
+}
+
+// ============================================================
+// Botón pastilla (cuadrado redondeado con borde, como la imagen)
+// ============================================================
+@Composable
+private fun PillButton(
+    icon: ImageVector,
+    label: String,
+    tint: Color = Color.White,
+    onClick: () -> Unit
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.width(56.dp)) {
+        Box(
+            Modifier
+                .size(46.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(CardDark)
+                .border(1.dp, TextSecondary.copy(alpha = 0.35f), RoundedCornerShape(16.dp))
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, null, tint = tint, modifier = Modifier.size(22.dp))
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(label, color = TextSecondary, fontSize = 9.sp, maxLines = 1)
     }
 }
 
