@@ -411,6 +411,7 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
 // ============================================================
 // Botón pastilla (cuadrado redondeado con borde, como la imagen)
 // ============================================================
+// Botón pastilla: solo el ícono (como descarga y favoritos) + texto abajo
 @Composable
 private fun PillButton(
     icon: ImageVector,
@@ -420,22 +421,12 @@ private fun PillButton(
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.width(56.dp)) {
-        Box(
-            Modifier
-                .size(46.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .background(CardDark)
-                .border(1.dp, TextSecondary.copy(alpha = 0.35f), RoundedCornerShape(16.dp))
-                .clickable(onClick = onClick),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(icon, null, tint = tint, modifier = Modifier.size(22.dp))
+        IconButton(onClick = onClick) {
+            Icon(icon, null, tint = tint, modifier = Modifier.size(24.dp))
         }
-        Spacer(Modifier.height(4.dp))
         Text(label, color = TextSecondary, fontSize = 9.sp, maxLines = 1)
     }
 }
-
 // ============================================================
 // Diálogo del ecualizador
 // ============================================================
