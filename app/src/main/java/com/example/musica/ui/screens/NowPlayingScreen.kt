@@ -179,16 +179,16 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                     textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth()
                 )
 
-                Spacer(Modifier.height(16.dp))
+                // Espacio flexible ARRIBA (la mitad del reparto: encabezado
+                // queda más cerca de la carátula)
+                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.weight(1f))
 
                 if (song == null) {
                     Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                         Text("Elige una canción para empezar", color = TextSecondary)
                     }
                 } else {
-                    // Espacio flexible ARRIBA (igual que abajo)
-                    Spacer(Modifier.weight(1f))
-
                     // ---------- Bloque central ----------
                     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
 
@@ -364,10 +364,11 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                         }
                     }
 
-                    // Espacio flexible ABAJO (igual que arriba)
+                    // Espacio flexible ABAJO (la mitad del reparto: los pills
+                    // y la descarga quedan más cerca del reproductor)
                     Spacer(Modifier.weight(1f))
 
-                    // ---------- Fila inferior: Sleep EQ Shuffle Repeat Cola · Descarga ----------
+                    // ---------- Fila inferior: Sleep EQ Aleatorio Repetir Cola · Descarga ----------
                     Row(Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically) {
 
@@ -439,9 +440,11 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
                             }
                         }
                     }
-
-                    Spacer(Modifier.height(14.dp))
                 }
+
+                // Espacio flexible final: absorbe el espacio liberado al
+                // compactar arriba (los pills quedan más arriba en pantalla)
+                Spacer(Modifier.weight(2f))
             }
         }
 
