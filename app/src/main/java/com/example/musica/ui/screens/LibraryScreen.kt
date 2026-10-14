@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -33,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
+import com.example.musica.data.DownloadRepository
 import com.example.musica.data.MusicRepository
 import com.example.musica.data.PlaylistRepository
 import com.example.musica.player.PlayerViewModel
@@ -51,8 +53,8 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
     val scope = rememberCoroutineScope()
     val ctx = LocalContext.current
     val songsRaw by MusicRepository.songs.collectAsState()
-    val offline by com.example.musica.data.DownloadRepository.offlineMode.collectAsState()
-    val songs = if (offline) songsRaw.filter { com.example.musica.data.DownloadRepository.isDownloaded(it.id) }
+    val offline by DownloadRepository.offlineMode.collectAsState()
+    val songs = if (offline) songsRaw.filter { DownloadRepository.isDownloaded(it.id) }
     else songsRaw
     val userLists by PlaylistRepository.playlists.collectAsState()
     val ready by MusicRepository.ready.collectAsState()
@@ -111,13 +113,13 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
                     Text(status, color = TextSecondary, fontSize = 12.sp)
                     Spacer(Modifier.height(8.dp))
                 }
-                val pending = MusicRepository.pendingCount()
+                val pending = remember(songs) { MusicRepository.pendingCount() }
                 if (pending > 0) {
                     Text("🔎 Procesando carátulas y géneros… faltan $pending canciones",
                         color = Purple, fontSize = 12.sp)
                     Spacer(Modifier.height(8.dp))
                 }
-                val onlinePending = MusicRepository.pendingOnlineCount()
+                val onlinePending = remember(songs) { MusicRepository.pendingOnlineCount() }
                 if (pending == 0 && onlinePending > 0) {
                     Text("🌐 Buscando géneros en internet… faltan $onlinePending canciones",
                         color = Cyan, fontSize = 12.sp)
