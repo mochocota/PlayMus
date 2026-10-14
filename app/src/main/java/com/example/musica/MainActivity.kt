@@ -128,11 +128,11 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
             when {
                 meta > 0 -> {
                     try { MusicRepository.scanPending() } catch (_: Exception) {}
-                    delay(400)
+                    delay(150)
                 }
                 online > 0 -> {
                     try { MusicRepository.enrichOnline() } catch (_: Exception) {}
-                    delay(1500)
+                    delay(500)
                 }
                 else -> {
                     delay(60_000)
