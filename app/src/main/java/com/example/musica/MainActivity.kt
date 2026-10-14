@@ -109,7 +109,11 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
         }
     }
 
-    // BUCLE AUTOMÁTICO — arranca cuando la biblioteca cargó
+    // ============================================================
+    // BUCLE AUTOMÁTICO — arranca cuando la biblioteca cargó.
+    // Prioridad: metadatos → géneros online → carátulas de rescate
+    // → revisión periódica del canal. En modo offline, nada de red.
+    // ============================================================
     val ready by MusicRepository.ready.collectAsState()
     LaunchedEffect(ready) {
         if (!ready) return@LaunchedEffect
@@ -119,12 +123,14 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
         }
         var cycles = 0
         while (isActive) {
+            // Modo offline: sin trabajo de red mientras esté activo
             if (DownloadRepository.offlineMode.value) {
                 delay(3000)
                 continue
             }
             val meta = MusicRepository.pendingCount()
             val online = MusicRepository.pendingOnlineCount()
+            val covers = MusicRepository.pendingCoverCount()
             when {
                 meta > 0 -> {
                     try { MusicRepository.scanPending() } catch (_: Exception) {}
@@ -134,12 +140,17 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
                     try { MusicRepository.enrichOnline() } catch (_: Exception) {}
                     delay(500)
                 }
+                covers > 0 -> {
+                    try { MusicRepository.fetchMissingCovers() } catch (_: Exception) {}
+                    delay(800)
+                }
                 else -> {
                     delay(60_000)
                     try { MusicRepository.sync() } catch (_: Exception) {}
                 }
             }
             cycles++
+            // Revisa el canal con menos frecuencia mientras hay trabajo
             if (cycles % 15 == 0) {
                 try { MusicRepository.sync() } catch (_: Exception) {}
             }
