@@ -44,8 +44,8 @@ object MusicRepository {
 
     private lateinit var context: Context
 
-    private const val SCAN_PARALLEL = 14
-    private const val SCAN_BATCH = 70
+    private const val SCAN_PARALLEL = 20
+    private const val SCAN_BATCH = 80
     private const val ONLINE_PARALLEL = 8
     private const val ONLINE_BATCH = 20
     private val MAX_ONLINE_ATTEMPTS = 3
@@ -73,8 +73,7 @@ object MusicRepository {
     }
 
     // ============================================================
-    // CARGA PROGRESIVA: procesa el JSON local por BLOQUES y emite
-    // cada bloque a la pantalla (la biblioteca crece por tandas)
+    // CARGA PROGRESIVA
     // ============================================================
     private suspend fun progressiveLoad() {
         val f = file()
@@ -128,6 +127,14 @@ object MusicRepository {
     fun libraryFile(): File = file()
 
     fun pendingCount(): Int = _songs.value.count { it.fromTelegram && !it.metaDone }
+
+    // Pendientes de carátula: sin carátula local Y sin haber buscado online
+    fun pendingCoverCount(): Int = _songs.value.count { s ->
+        s.fromTelegram && s.coverPath.isBlank() &&
+                (onlineCoverTries[s.id] ?: 0) < 2 &&
+                s.artist.isNotBlank() && s.artist != "Desconocido" &&
+                s.title.isNotBlank() && s.title.length >= 3
+    }
 
     fun pendingOnlineCount(): Int = _songs.value.count { s ->
         s.fromTelegram && s.genre == "Otros" &&
@@ -569,6 +576,7 @@ object MusicRepository {
         return mutex.withLock { enrichLocked(limit) }
     }
     
+
     // ===== PARTE 2 =====
     private suspend fun scanLocked(limit: Int): Int = withContext(Dispatchers.IO) {
         val token = TelegramConfig.token(context)
@@ -645,6 +653,147 @@ object MusicRepository {
             }
         } catch (_: Exception) {}
         return newSong
+    }
+
+    // ============================================================
+    // RESCATE DE CARÁTULAS ONLINE: para canciones cuyo MP3 no trae
+    // carátula incrustada, descarga la carátula oficial del álbum
+    // (iTunes primero, Deezer respaldo) y la guarda localmente.
+    // ============================================================
+    private val onlineCoverTries = ConcurrentHashMap<Int, Int>()
+    private val onlineCoverTriesFile = { File(context.filesDir, "online_cover_tries.json") }
+
+    suspend fun fetchMissingCovers(limit: Int = 20): Int = mutex.withLock {
+        withContext(Dispatchers.IO) {
+            val candidates = _songs.value.filter { s ->
+                s.fromTelegram && s.coverPath.isBlank() &&
+                        (onlineCoverTries[s.id] ?: 0) < 2 &&
+                        s.artist.isNotBlank() && s.artist != "Desconocido" &&
+                        s.title.isNotBlank() && s.title.length >= 3
+            }.take(limit)
+            if (candidates.isEmpty()) return@withContext 0
+
+            val sem = Semaphore(8)
+            val results = ConcurrentHashMap<Int, String>()
+
+            val jobs = candidates.map { song ->
+                launch {
+                    sem.withPermit {
+                        onlineCoverTries[song.id] = (onlineCoverTries[song.id] ?: 0) + 1
+                        val url = lookupCoverOnline(song.title, song.artist, song.album)
+                        if (url != null) {
+                            try {
+                                val conn = URL(url).openConnection() as HttpURLConnection
+                                conn.connectTimeout = 8000
+                                conn.readTimeout = 15000
+                                if (conn.responseCode in 200..299) {
+                                    val bytes = conn.inputStream.use { it.readBytes() }
+                                    if (bytes.size > 2000) { // evita imágenes basura
+                                        val f = coverFile(song.id)
+                                        f.parentFile?.mkdirs()
+                                        f.writeBytes(bytes)
+                                        results[song.id] = f.absolutePath
+                                    }
+                                }
+                                conn.disconnect()
+                            } catch (_: Exception) {}
+                        }
+                    }
+                }
+            }
+            jobs.joinAll()
+            saveCoverTries()
+
+            if (results.isEmpty()) return@withContext 0
+            _songs.value = _songs.value.map { s ->
+                results[s.id]?.let { s.copy(coverPath = it) } ?: s
+            }
+            save()
+            results.size
+        }
+    }
+
+    // Busca la carátula del álbum online
+    private fun lookupCoverOnline(title: String, artist: String, album: String): String? {
+        // ---------- 1) iTunes (devuelve URL de carátula alta) ----------
+        try {
+            val term = if (album.isNotBlank()) "$artist $album" else "$artist $title"
+            val q = URLEncoder.encode(term, "UTF-8")
+            val conn = URL("https://itunes.apple.com/search?term=$q&entity=song&limit=3")
+                .openConnection() as HttpURLConnection
+            try {
+                conn.connectTimeout = 8000
+                conn.readTimeout = 8000
+                conn.setRequestProperty("User-Agent", "MusicaApp/1.0")
+                val body = conn.inputStream.bufferedReader().readText()
+                val arr = JSONObject(body).optJSONArray("results")
+                if (arr != null) {
+                    for (i in 0 until arr.length()) {
+                        val hit = arr.getJSONObject(i)
+                        if (!titleMatches(hit.optString("trackName", ""), title)) continue
+                        var art = hit.optString("artworkUrl100", "")
+                        if (art.isNotBlank()) {
+                            // Pedir versión grande (600x600) en vez de 100x100
+                            art = art.replace("100x100", "600x600")
+                            return art
+                        }
+                    }
+                }
+            } finally {
+                conn.disconnect()
+            }
+        } catch (_: Exception) {}
+
+        // ---------- 2) Deezer (respaldo) ----------
+        try {
+            val q = if (artist.isNotBlank())
+                URLEncoder.encode("artist:\"$artist\" track:\"$title\"", "UTF-8")
+            else
+                URLEncoder.encode("track:\"$title\"", "UTF-8")
+            val conn = URL("https://api.deezer.com/search?q=$q&limit=3")
+                .openConnection() as HttpURLConnection
+            try {
+                conn.connectTimeout = 8000
+                conn.readTimeout = 8000
+                conn.setRequestProperty("User-Agent", "MusicaApp/1.0")
+                val body = conn.inputStream.bufferedReader().readText()
+                val data = JSONObject(body).optJSONArray("data")
+                if (data != null) {
+                    for (i in 0 until data.length()) {
+                        val track = data.getJSONObject(i)
+                        if (!titleMatches(
+                                track.optString("title_short", track.optString("title", "")),
+                                title)) continue
+                        val album = track.optJSONObject("album")
+                        val cover = album?.optString("cover_xl", "")
+                            ?: album?.optString("cover_big", "") ?: ""
+                        if (cover.isNotBlank()) return cover
+                    }
+                }
+            } finally {
+                conn.disconnect()
+            }
+        } catch (_: Exception) {}
+        return null
+    }
+
+    private fun coverTriesFile(): File = onlineCoverTriesFile()
+
+    private fun saveCoverTries() {
+        try {
+            val o = JSONObject()
+            onlineCoverTries.forEach { (k, v) -> o.put(k.toString(), v) }
+            coverTriesFile().writeText(o.toString())
+        } catch (_: Exception) {}
+    }
+
+    private fun loadCoverTries() {
+        try {
+            val f = coverTriesFile()
+            if (!f.exists()) return
+            val o = JSONObject(f.readText())
+            o.keys().forEach { k -> onlineCoverTries[k.toInt()] = o.optInt(k, 0) }
+        } catch (_: Exception) {}
     }
 
     private data class OnlineHit(
@@ -937,7 +1086,6 @@ object MusicRepository {
 
     private fun file() = File(context.filesDir, "library.json")
 
-    // Escritura en segundo plano: el JSON grande nunca bloquea la UI
     private val saveExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
 
     private fun save() {
@@ -963,7 +1111,6 @@ object MusicRepository {
         } catch (_: Exception) {}
     }
 
-    // Snapshot sincrónico usado solo por la carga progresiva (crash-safe)
     private fun saveSnapshot(list: List<Song>) {
         try {
             val arr = JSONArray()
@@ -1007,4 +1154,4 @@ object MusicRepository {
         } catch (_: Exception) {}
     }
 }
-    
+    // ===== CONTINUA EN LA PARTE 2 (pégalas juntas, sin esta línea) =====
