@@ -32,11 +32,9 @@ object MusicRepository {
     private val _songs = MutableStateFlow<List<Song>>(emptyList())
     val songs: StateFlow<List<Song>> = _songs
 
-    // true cuando la biblioteca terminó de cargar en segundo plano
     private val _ready = MutableStateFlow(false)
     val ready: StateFlow<Boolean> = _ready
 
-    // Progreso de la carga progresiva (0 a 1, 1 = lista completa)
     private val _loadProgress = MutableStateFlow(1f)
     val loadProgress: StateFlow<Float> = _loadProgress
 
@@ -53,7 +51,6 @@ object MusicRepository {
     private val MAX_ONLINE_ATTEMPTS = 3
     private val attempts = ConcurrentHashMap<Int, Int>()
 
-    // Tamaño de bloque para la emisión progresiva
     private const val PROGRESSIVE_CHUNK = 200
 
     fun init(ctx: Context) {
@@ -61,8 +58,6 @@ object MusicRepository {
         coversDir().mkdirs()
         scope.launch {
             try {
-                // Carga progresiva: emite cada bloque a la pantalla
-                // mientras carga el resto (visible al instante)
                 progressiveLoad()
                 if (_songs.value.isEmpty()) loadSeedCatalog()
                 loadAttempts()
@@ -78,9 +73,8 @@ object MusicRepository {
     }
 
     // ============================================================
-    // CARGA PROGRESIVA: el JSON local se procesa por BLOQUES y cada
-    // bloque se emite de inmediato a la pantalla. La biblioteca se
-    // ve crecer por tandas de ~200 en vez de aparecer "de golpe".
+    // CARGA PROGRESIVA: procesa el JSON local por BLOQUES y emite
+    // cada bloque a la pantalla (la biblioteca crece por tandas)
     // ============================================================
     private suspend fun progressiveLoad() {
         val f = file()
@@ -121,36 +115,11 @@ object MusicRepository {
             }
             i = end
             step++
-            // Emisión inmediata del bloque a la pantalla
             _songs.value = accumulated.toList()
             _loadProgress.value = i.toFloat() / total
-
-            // Guarda parcialmente cada 3 bloques (crash-safe)
             if (step % 3 == 0) saveSnapshot(accumulated)
-
-            // Cede el hilo para no bloquear la UI
-            withContext(Dispatchers.IO) { /* yield */ }
         }
         save()
-    }
-
-    // Guarda un snapshot parcial (crash-safe durante cargas largas)
-    private fun saveSnapshot(list: List<Song>) {
-        try {
-            val arr = JSONArray()
-            list.forEach { s ->
-                arr.put(
-                    JSONObject()
-                        .put("id", s.id).put("title", s.title).put("artist", s.artist)
-                        .put("album", s.album).put("durationSec", s.durationSec)
-                        .put("fileId", s.fileId).put("genre", s.genre)
-                        .put("fromTelegram", s.fromTelegram).put("scanned", s.scanned)
-                        .put("coverPath", s.coverPath).put("metaDone", s.metaDone)
-                        .put("caption", s.caption).put("fileName", s.fileName)
-                )
-            }
-            file().writeText(arr.toString())
-        } catch (_: Exception) {}
     }
 
     private fun coversDir() = File(context.filesDir, "covers")
@@ -187,8 +156,98 @@ object MusicRepository {
     }
 
     // ============================================================
-    // CATÁLOGO SEMILLA (res/raw/seed_catalog.json): si existe y la
-    // biblioteca está vacía, carga progresiva al instante.
+    // DUPLICADOS
+    // ============================================================
+    private fun songKey(s: String): String {
+        val noExtras = s
+            .replace(Regex("\\(.*?\\)"), " ")
+            .replace(Regex("\\[.*?\\]"), " ")
+            .replace(Regex("\\b(ft|feat|featuring|con)\\..*$", RegexOption.IGNORE_CASE), " ")
+        return norm(noExtras).replace(Regex("[^a-z0-9 ]"), "")
+            .replace(Regex("\\s+"), " ").trim()
+    }
+
+    private fun dedupeKey(s: Song): String {
+        val artistKey = if (s.artist.isBlank() || s.artist == "Desconocido") ""
+        else songKey(s.artist)
+        return songKey(s.title) + "|" + artistKey
+    }
+
+    private fun matchesSong(s: Song, title: String, artist: String, durationSec: Int): Boolean {
+        val t = songKey(s.title)
+        if (t.isEmpty() || t != songKey(title)) return false
+        val sArtist = songKey(s.artist)
+        val oArtist = songKey(artist)
+        if (sArtist.isNotBlank() && oArtist.isNotBlank() && sArtist == oArtist) return true
+        if (s.durationSec > 0 && durationSec > 0 &&
+            abs(s.durationSec - durationSec) <= 2
+        ) return true
+        return false
+    }
+
+    private fun sameSong(a: Song, b: Song): Boolean {
+        if (a.id == b.id) return false
+        return matchesSong(a, b.title, b.artist, b.durationSec)
+    }
+
+    fun countDuplicates(): Int {
+        val groups = _songs.value.groupBy { dedupeKey(it) }.filter { it.key.isNotBlank() }
+        var extra = 0
+        groups.forEach { (_, list) ->
+            if (list.size > 1) {
+                val kept = mutableListOf<Song>(list.first())
+                for (i in 1 until list.size) {
+                    val s = list[i]
+                    if (kept.any { sameSong(it, s) }) extra++ else kept.add(s)
+                }
+            }
+        }
+        return extra
+    }
+
+    private fun songScore(s: Song): Int {
+        var p = 0
+        if (DownloadRepository.isDownloaded(s.id)) p += 100
+        if (s.coverPath.isNotBlank()) p += 50
+        if (FavoritesRepository.isFavorite(s.id)) p += 25
+        if (s.metaDone) p += 10
+        if (s.genre != "Otros") p += 5
+        if (s.album.isNotBlank()) p += 3
+        return p
+    }
+
+    fun removeDuplicates(): Int {
+        val groups = _songs.value.groupBy { dedupeKey(it) }.filter { it.key.isNotBlank() }
+        val toRemove = mutableListOf<Song>()
+        groups.forEach { (_, list) ->
+            if (list.size > 1) {
+                val kept = mutableListOf<Song>(list.first())
+                for (i in 1 until list.size) {
+                    val s = list[i]
+                    val dupe = kept.firstOrNull { sameSong(it, s) }
+                    if (dupe != null) {
+                        if (songScore(s) > songScore(dupe)) {
+                            toRemove.add(dupe)
+                            kept.remove(dupe)
+                            kept.add(s)
+                        } else {
+                            toRemove.add(s)
+                        }
+                    } else {
+                        kept.add(s)
+                    }
+                }
+            }
+        }
+        if (toRemove.isEmpty()) return 0
+        val removeIds = toRemove.map { it.id }.toSet()
+        _songs.value = _songs.value.filterNot { it.id in removeIds }
+        save()
+        return toRemove.size
+    }
+
+    // ============================================================
+    // CATÁLOGO SEMILLA (progresivo)
     // ============================================================
     private suspend fun loadSeedCatalog() {
         try {
@@ -238,14 +297,13 @@ object MusicRepository {
                 _songs.value = accumulated.toList()
                 _loadProgress.value = i.toFloat() / total
                 if (step % 3 == 0) save()
-                withContext(Dispatchers.IO) { /* yield */ }
             }
             save()
         } catch (_: Throwable) {}
     }
 
     // ============================================================
-    // SINCRONIZACIÓN (mensajes + importación + reparación + prevención)
+    // SINCRONIZACIÓN
     // ============================================================
     suspend fun sync(): String {
         loadedGate.await()
@@ -510,7 +568,8 @@ object MusicRepository {
         loadedGate.await()
         return mutex.withLock { enrichLocked(limit) }
     }
-
+    
+    // ===== PARTE 2 =====
     private suspend fun scanLocked(limit: Int): Int = withContext(Dispatchers.IO) {
         val token = TelegramConfig.token(context)
         if (token.isBlank()) return@withContext 0
@@ -878,6 +937,9 @@ object MusicRepository {
 
     private fun file() = File(context.filesDir, "library.json")
 
+    // Escritura en segundo plano: el JSON grande nunca bloquea la UI
+    private val saveExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+
     private fun save() {
         try {
             val snapshot = _songs.value.toList()
@@ -901,7 +963,7 @@ object MusicRepository {
         } catch (_: Exception) {}
     }
 
-    // Escritura sincrónica rápida usada solo por la carga progresiva
+    // Snapshot sincrónico usado solo por la carga progresiva (crash-safe)
     private fun saveSnapshot(list: List<Song>) {
         try {
             val arr = JSONArray()
@@ -919,4 +981,30 @@ object MusicRepository {
             file().writeText(arr.toString())
         } catch (_: Exception) {}
     }
+
+    private fun load() {
+        try {
+            val f = file()
+            if (!f.exists()) return
+            val arr = JSONArray(f.readText())
+            val list = (0 until arr.length()).map { i ->
+                val o = arr.getJSONObject(i)
+                Song(
+                    id = o.optInt("id"), title = o.optString("title"),
+                    artist = o.optString("artist"), album = o.optString("album"),
+                    durationSec = o.optInt("durationSec"), url = "",
+                    fileId = o.optString("fileId"),
+                    genre = o.optString("genre", "Otros"),
+                    fromTelegram = o.optBoolean("fromTelegram"),
+                    scanned = o.optBoolean("scanned"),
+                    coverPath = o.optString("coverPath", ""),
+                    metaDone = o.optBoolean("metaDone"),
+                    caption = o.optString("caption", ""),
+                    fileName = o.optString("fileName", "")
+                )
+            }
+            _songs.value = list
+        } catch (_: Exception) {}
+    }
 }
+    
