@@ -578,7 +578,6 @@ object MusicRepository {
         loadedGate.await()
         return mutex.withLock { enrichLocked(limit) }
     }
-    
 
     // ===== PARTE 2 =====
     private suspend fun scanLocked(limit: Int): Int = withContext(Dispatchers.IO) {
