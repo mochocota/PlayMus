@@ -41,10 +41,10 @@ object MusicRepository {
 
     private lateinit var context: Context
 
-    private const val SCAN_PARALLEL = 6
-    private const val SCAN_BATCH = 24
-    private const val ONLINE_PARALLEL = 4
-    private const val ONLINE_BATCH = 8
+    private const val SCAN_PARALLEL = 14
+    private const val SCAN_BATCH = 70
+    private const val ONLINE_PARALLEL = 8
+    private const val ONLINE_BATCH = 20
     private val MAX_ONLINE_ATTEMPTS = 3
     private val attempts = ConcurrentHashMap<Int, Int>()
 
@@ -238,7 +238,7 @@ object MusicRepository {
                 var conflict = false
                 var offset = TelegramConfig.offset(context)
                 var processed = 0
-                val CAP = 1500
+                val CAP = 6000
 
                 if (_songs.value.isEmpty()) {
                     val autoId = TelegramConfig.autoImportFileId(context)
