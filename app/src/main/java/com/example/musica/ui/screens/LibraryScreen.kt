@@ -125,6 +125,12 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
                         color = Cyan, fontSize = 12.sp)
                     Spacer(Modifier.height(8.dp))
                 }
+                val coversPending = remember(songs) { MusicRepository.pendingCoverCount() }
+                if (pending == 0 && onlinePending == 0 && coversPending > 0) {
+                    Text("🎨 Rescatando carátulas de internet… faltan $coversPending canciones",
+                        color = Cyan, fontSize = 12.sp)
+                    Spacer(Modifier.height(8.dp))
+                }
             }
             Spacer(Modifier.height(4.dp))
 
