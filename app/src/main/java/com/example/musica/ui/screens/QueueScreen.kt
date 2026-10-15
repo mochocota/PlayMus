@@ -9,9 +9,16 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -20,8 +27,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
+import com.example.musica.data.Song
 import com.example.musica.data.fmtSeconds
 import com.example.musica.player.PlayerViewModel
+import com.example.musica.ui.components.AddToPlaylistDialog
 import com.example.musica.ui.components.CoverImage
 import com.example.musica.ui.components.MiniPlayer
 import com.example.musica.ui.theme.CardLighter
@@ -33,6 +42,9 @@ import com.example.musica.ui.theme.TextSecondary
 fun QueueScreen(nav: NavHostController, vm: PlayerViewModel) {
     val queue = vm.queue
     val pos = vm.queuePosition
+
+    // ---------- Añadir a lista ----------
+    var songToAdd by remember { mutableStateOf<Song?>(null) }
 
     Column(Modifier.fillMaxSize().background(NavyBg)) {
         Column(Modifier.weight(1f).padding(16.dp)) {
@@ -98,6 +110,11 @@ fun QueueScreen(nav: NavHostController, vm: PlayerViewModel) {
                                     Text(s.title, color = Color.White, fontSize = 14.sp, maxLines = 1)
                                     Text(s.artist, color = TextSecondary, fontSize = 12.sp, maxLines = 1)
                                 }
+                                // Añadir a lista
+                                IconButton(onClick = { songToAdd = s }) {
+                                    Icon(Icons.Filled.PlaylistAdd, "Añadir a lista",
+                                        tint = TextSecondary)
+                                }
                                 Text(fmtSeconds(s.durationSec), color = TextSecondary, fontSize = 12.sp)
                             }
                         }
@@ -126,6 +143,11 @@ fun QueueScreen(nav: NavHostController, vm: PlayerViewModel) {
                                     Text(s.artist, color = TextSecondary.copy(alpha = 0.7f),
                                         fontSize = 12.sp, maxLines = 1)
                                 }
+                                // Añadir a lista
+                                IconButton(onClick = { songToAdd = s }) {
+                                    Icon(Icons.Filled.PlaylistAdd, "Añadir a lista",
+                                        tint = TextSecondary)
+                                }
                             }
                         }
                     }
@@ -135,4 +157,7 @@ fun QueueScreen(nav: NavHostController, vm: PlayerViewModel) {
         }
         if (vm.current != null) MiniPlayer(vm) { nav.navigate("player") }
     }
+
+    // ---------- Diálogo: añadir a lista (o crear una nueva) ----------
+    AddToPlaylistDialog(songToAdd) { songToAdd = null }
 }
