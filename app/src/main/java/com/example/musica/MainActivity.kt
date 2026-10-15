@@ -72,6 +72,7 @@ import com.example.musica.ui.theme.Purple
 import com.example.musica.ui.theme.TextSecondary
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import com.example.musica.ui.screens.SmartListScreen
 
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -109,11 +110,7 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
         }
     }
 
-    // ============================================================
-    // BUCLE AUTOMÁTICO — arranca cuando la biblioteca cargó.
-    // Prioridad: metadatos → géneros online → carátulas de rescate
-    // → revisión periódica del canal. En modo offline, nada de red.
-    // ============================================================
+    // BUCLE AUTOMÁTICO — arranca cuando la biblioteca cargó
     val ready by MusicRepository.ready.collectAsState()
     LaunchedEffect(ready) {
         if (!ready) return@LaunchedEffect
@@ -123,7 +120,6 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
         }
         var cycles = 0
         while (isActive) {
-            // Modo offline: sin trabajo de red mientras esté activo
             if (DownloadRepository.offlineMode.value) {
                 delay(3000)
                 continue
@@ -150,7 +146,6 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
                 }
             }
             cycles++
-            // Revisa el canal con menos frecuencia mientras hay trabajo
             if (cycles % 15 == 0) {
                 try { MusicRepository.sync() } catch (_: Exception) {}
             }
@@ -184,6 +179,9 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
                 UserPlaylistScreen(nav, vm, b.arguments?.getString("id").orEmpty())
             }
             composable("downloads") { DownloadsScreen(nav, vm) }
+            composable("smart/{type}") { b ->
+                SmartListScreen(nav, vm, b.arguments?.getString("type").orEmpty())
+            }
             composable("artists") { ArtistsScreen(nav) }
             composable("settings") { SettingsScreen(nav) }
             composable("genres") { GenresScreen(nav) }
