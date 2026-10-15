@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
@@ -33,11 +34,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavHostController
 import com.example.musica.data.DownloadRepository
+import com.example.musica.data.FavoritesRepository
 import com.example.musica.data.MusicRepository
 import com.example.musica.data.PlayStatsRepository
 import com.example.musica.data.PlaylistRepository
@@ -48,7 +51,7 @@ import com.example.musica.ui.theme.CardDark
 import com.example.musica.ui.theme.NavyBg
 import com.example.musica.ui.theme.Purple
 import com.example.musica.ui.theme.TextSecondary
-
+import com.example.musica.ui.theme.Cyan
 @Composable
 fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
     val ctx = LocalContext.current
@@ -61,21 +64,23 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
     val loadProgress by MusicRepository.loadProgress.collectAsState()
     val stats by PlayStatsRepository.counts.collectAsState()
     val lastPlayed by PlayStatsRepository.lastPlayed.collectAsState()
+    val favIds by FavoritesRepository.ids.collectAsState()
 
     var showCreate by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
 
     // ---------- Conteos de las listas inteligentes ----------
-        val favCount = com.example.musica.data.FavoritesRepository.ids.collectAsState().value.count { id -> songs.any { it.id == id } }
+    val favCount = favIds.count { id -> songs.any { it.id == id } }
     val dlCount = DownloadRepository.downloadedCount()
     val topCount = songs.count { (stats[it.id] ?: 0) > 0 }
     val now = System.currentTimeMillis()
+    val songIds = songs.map { it.id }.toSet()
     val monthCount = lastPlayed.count { (key, at) ->
-        now - at <= 30L * 24 * 60 * 60 * 1000 && songs.any { it.id == key }
-    }.let { it.values.size }
+        now - at <= 30L * 24 * 60 * 60 * 1000 && key in songIds
+    }
     val weekCount = lastPlayed.count { (key, at) ->
-        now - at <= 7L * 24 * 60 * 60 * 1000 && songs.any { it.id == key }
-    }.let { it.values.size }
+        now - at <= 7L * 24 * 60 * 60 * 1000 && key in songIds
+    }
 
     Column(Modifier.fillMaxSize().background(NavyBg)) {
 
@@ -104,7 +109,7 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
 
             if (loadProgress < 1f) {
                 Text("📚 Cargando biblioteca… ${songs.size} canciones",
-                    color = Cyan, fontSize = 12.sp,
+                    color = TextSecondary, fontSize = 12.sp,
                     modifier = Modifier.padding(horizontal = 16.dp))
                 Spacer(Modifier.height(8.dp))
             }
