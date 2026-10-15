@@ -3,7 +3,6 @@ package com.example.musica.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -23,9 +22,9 @@ import androidx.navigation.NavHostController
 import com.example.musica.data.DownloadRepository
 import com.example.musica.data.MusicRepository
 import com.example.musica.data.PlayStatsRepository
+import com.example.musica.data.Song
 import com.example.musica.player.PlayerViewModel
 import com.example.musica.ui.components.CoverImage
-import com.example.musica.ui.theme.Cyan
 import com.example.musica.ui.theme.NavyBg
 import com.example.musica.ui.theme.TextSecondary
 
@@ -33,28 +32,27 @@ import com.example.musica.ui.theme.TextSecondary
 fun HomeScreen(nav: NavHostController, vm: PlayerViewModel) {
     val songsRaw by MusicRepository.songs.collectAsState()
     val offline by DownloadRepository.offlineMode.collectAsState()
-    // En modo offline: solo las descargadas
     val songs = if (offline) songsRaw.filter { DownloadRepository.isDownloaded(it.id) }
     else songsRaw
 
     val stats by PlayStatsRepository.counts.collectAsState()
     val lastPlayed by PlayStatsRepository.lastPlayed.collectAsState()
 
-    // Escuchado recientemente: historial REAL por fecha de reproducción
+    // Escuchado recientemente (hasta 15)
     val recentSongs = remember(songs, lastPlayed) {
         lastPlayed.entries.sortedByDescending { it.value }
             .mapNotNull { e -> songs.firstOrNull { it.id == e.key } }
-            .take(12)
+            .take(15)
     }
 
-    // Las más reproducidas (hasta 30)
+    // Las más reproducidas (hasta 15)
     val topSongs = remember(songs, stats) {
         songs.filter { (stats[it.id] ?: 0) > 0 }
             .sortedByDescending { stats[it.id] ?: 0 }
-            .take(30)
+            .take(15)
     }
 
-    // Te podría gustar: parecidas (género o artista) a las más reproducidas
+    // Te podría gustar (hasta 15)
     val recommended = remember(songs, topSongs) {
         if (topSongs.isEmpty()) emptyList()
         else {
@@ -65,7 +63,7 @@ fun HomeScreen(nav: NavHostController, vm: PlayerViewModel) {
             val similar = pool.filter { it.genre in topGenres || it.artist in topArtists }.shuffled()
             val similarIds = similar.map { it.id }.toSet()
             val others = pool.filter { it.id !in similarIds }.shuffled()
-            (similar + others).take(30)
+            (similar + others).take(15)
         }
     }
 
@@ -83,13 +81,6 @@ fun HomeScreen(nav: NavHostController, vm: PlayerViewModel) {
                 fontSize = 20.sp, fontWeight = FontWeight.Bold)
         }
 
-        // Aviso de modo offline
-        if (offline) {
-            Spacer(Modifier.height(12.dp))
-            Text("✈️ Modo offline · mostrando tus ${songs.size} descargas",
-                color = Cyan, fontSize = 12.sp)
-        }
-
         // ---------- Escuchado recientemente ----------
         Spacer(Modifier.height(22.dp))
         Text("Escuchado recientemente", color = Color.White, fontSize = 16.sp,
@@ -99,19 +90,9 @@ fun HomeScreen(nav: NavHostController, vm: PlayerViewModel) {
             Text("Reproduce canciones y aparecerán aquí.",
                 color = TextSecondary, fontSize = 13.sp)
         } else {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(recentSongs.size) { i ->
-                    val s = recentSongs[i]
-                    Column(Modifier.width(110.dp).clickable {
-                        vm.play(s, recentSongs)
-                        nav.navigate("player")
-                    }) {
-                        CoverImage(s, Modifier.size(110.dp), corner = 14.dp, offlineBadge = true)
-                        Spacer(Modifier.height(8.dp))
-                        Text(s.title, color = Color.White, fontSize = 13.sp, maxLines = 1)
-                        Text(s.artist, color = TextSecondary, fontSize = 11.sp, maxLines = 1)
-                    }
-                }
+            Grid3(recentSongs) { s, list ->
+                vm.play(s, list)
+                nav.navigate("player")
             }
         }
 
@@ -121,23 +102,12 @@ fun HomeScreen(nav: NavHostController, vm: PlayerViewModel) {
             fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(4.dp))
         if (topSongs.isEmpty()) {
-            Text("Reproduce canciones y aquí aparecerán tus 30 más escuchadas.",
+            Text("Reproduce canciones y aquí aparecerán tus más escuchadas.",
                 color = TextSecondary, fontSize = 13.sp)
         } else {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(topSongs.size) { i ->
-                    val s = topSongs[i]
-                    Column(Modifier.width(110.dp).clickable {
-                        vm.play(s, topSongs)
-                        nav.navigate("player")
-                    }) {
-                        CoverImage(s, Modifier.size(110.dp), corner = 14.dp, offlineBadge = true)
-                        Spacer(Modifier.height(8.dp))
-                        Text("${i + 1}. ${s.title}", color = Color.White,
-                            fontSize = 13.sp, maxLines = 1)
-                        Text("▶ ${stats[s.id] ?: 0}", color = TextSecondary, fontSize = 11.sp)
-                    }
-                }
+            Grid3(topSongs) { s, list ->
+                vm.play(s, list)
+                nav.navigate("player")
             }
         }
 
@@ -150,22 +120,46 @@ fun HomeScreen(nav: NavHostController, vm: PlayerViewModel) {
             Text("Cuando reproduzcas más canciones te sugeriremos música parecida.",
                 color = TextSecondary, fontSize = 13.sp)
         } else {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(recommended.size) { i ->
-                    val s = recommended[i]
-                    Column(Modifier.width(110.dp).clickable {
-                        vm.play(s, recommended)
-                        nav.navigate("player")
-                    }) {
-                        CoverImage(s, Modifier.size(110.dp), corner = 14.dp, offlineBadge = true)
-                        Spacer(Modifier.height(8.dp))
-                        Text(s.title, color = Color.White, fontSize = 13.sp, maxLines = 1)
-                        Text(s.artist, color = TextSecondary, fontSize = 11.sp, maxLines = 1)
-                    }
-                }
+            Grid3(recommended) { s, list ->
+                vm.play(s, list)
+                nav.navigate("player")
             }
         }
 
         Spacer(Modifier.height(16.dp))
+    }
+}
+
+// ============================================================
+// Cuadrícula de 3 columnas (filas de 3 dentro del scroll;
+// cada sección muestra hasta 15 resultados)
+// ============================================================
+@Composable
+private fun Grid3(list: List<Song>, onPlay: (Song, List<Song>) -> Unit) {
+    list.chunked(3).forEach { rowSongs ->
+        Row(
+            Modifier.fillMaxWidth().padding(vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            rowSongs.forEach { s ->
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .clickable { onPlay(s, list) }
+                ) {
+                    CoverImage(s, Modifier.fillMaxWidth().aspectRatio(1f),
+                        corner = 12.dp, offlineBadge = true)
+                    Spacer(Modifier.height(6.dp))
+                    Text(s.title, color = Color.White, fontSize = 12.sp,
+                        maxLines = 1, lineHeight = 14.sp)
+                    Text(s.artist, color = TextSecondary, fontSize = 10.sp,
+                        maxLines = 1, lineHeight = 12.sp)
+                }
+            }
+            // Relleno para alinear filas incompletas
+            repeat(3 - rowSongs.size) {
+                Spacer(Modifier.weight(1f))
+            }
+        }
     }
 }
