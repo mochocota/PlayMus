@@ -12,7 +12,6 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material3.AlertDialog
@@ -34,7 +33,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -48,13 +46,13 @@ import com.example.musica.data.Song
 import com.example.musica.player.PlayerViewModel
 import com.example.musica.ui.components.CoverImage
 import com.example.musica.ui.theme.CardDark
+import com.example.musica.ui.theme.Cyan
 import com.example.musica.ui.theme.NavyBg
 import com.example.musica.ui.theme.Purple
 import com.example.musica.ui.theme.TextSecondary
-import com.example.musica.ui.theme.Cyan
+
 @Composable
 fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
-    val ctx = LocalContext.current
     val songsRaw by MusicRepository.songs.collectAsState()
     val offline by DownloadRepository.offlineMode.collectAsState()
     val songs = if (offline) songsRaw.filter { DownloadRepository.isDownloaded(it.id) }
@@ -84,16 +82,12 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
 
     Column(Modifier.fillMaxSize().background(NavyBg)) {
 
-        // ---------- Encabezado ----------
+        // ---------- Encabezado (sin búsqueda) ----------
         Spacer(Modifier.height(16.dp))
         Row(verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(horizontal = 16.dp)) {
             Text("Biblioteca", color = Color.White, fontSize = 24.sp,
                 fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            Icon(Icons.Filled.Search, null, tint = Color.White,
-                modifier = Modifier
-                    .clickable { nav.navigate("search") }
-                    .padding(8.dp))
             Icon(Icons.Filled.Settings, null, tint = Color.White,
                 modifier = Modifier
                     .clickable { nav.navigate("settings") }
@@ -109,7 +103,7 @@ fun LibraryScreen(nav: NavHostController, vm: PlayerViewModel) {
 
             if (loadProgress < 1f) {
                 Text("📚 Cargando biblioteca… ${songs.size} canciones",
-                    color = TextSecondary, fontSize = 12.sp,
+                    color = Cyan, fontSize = 12.sp,
                     modifier = Modifier.padding(horizontal = 16.dp))
                 Spacer(Modifier.height(8.dp))
             }
