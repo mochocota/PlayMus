@@ -43,10 +43,12 @@ import com.example.musica.data.DownloadRepository
 import com.example.musica.data.MusicRepository
 import com.example.musica.data.Song
 import com.example.musica.player.PlayerViewModel
+import com.example.musica.ui.components.AddToPlaylistDialog
 import com.example.musica.ui.components.CoverImage
 import com.example.musica.ui.theme.CardDark
 import com.example.musica.ui.theme.Cyan
 import com.example.musica.ui.theme.NavyBg
+import com.example.musica.ui.theme.Purple
 import com.example.musica.ui.theme.TextSecondary
 import java.text.Normalizer
 
@@ -54,7 +56,8 @@ private fun norm(s: String): String =
     Normalizer.normalize(s, Normalizer.Form.NFD)
         .replace(Regex("\\p{M}+"), "").lowercase().trim()
 
-private data class SearchItem(
+// Nombre único para no chocar con SearchItem de SearchScreen.kt
+private data class ExploreItem(
     val song: Song,
     val title: String,
     val artist: String,
@@ -76,7 +79,7 @@ fun ExploreScreen(nav: NavHostController, vm: PlayerViewModel) {
     // Índice precalculado (rápido con miles de canciones)
     val index = remember(library) {
         library.map {
-            SearchItem(it, norm(it.title), norm(it.artist), norm(it.album), norm(it.genre))
+            ExploreItem(it, norm(it.title), norm(it.artist), norm(it.album), norm(it.genre))
         }
     }
 
@@ -182,8 +185,10 @@ fun ExploreScreen(nav: NavHostController, vm: PlayerViewModel) {
                             SongRowWithMenu(
                                 song = s,
                                 downloading = downloading,
+                                menuOpen = songMenu?.id == s.id,
+                                onMenuOpen = { songMenu = s },
+                                onMenuDismiss = { songMenu = null },
                                 onClick = { vm.play(s, results) },
-                                onMenu = { songMenu = s },
                                 onPlay = { vm.play(s, results) },
                                 onAdd = { songToAdd = s },
                                 onDownload = {
@@ -243,8 +248,10 @@ fun ExploreScreen(nav: NavHostController, vm: PlayerViewModel) {
                             SongRowWithMenu(
                                 song = s,
                                 downloading = false,
+                                menuOpen = songMenu?.id == s.id,
+                                onMenuOpen = { songMenu = s },
+                                onMenuDismiss = { songMenu = null },
                                 onClick = { vm.play(s, library) },
-                                onMenu = { songMenu = s },
                                 onPlay = { vm.play(s, library) },
                                 onAdd = { songToAdd = s },
                                 onDownload = {
@@ -289,14 +296,17 @@ fun ExploreScreen(nav: NavHostController, vm: PlayerViewModel) {
 }
 
 // ============================================================
-// Fila de resultado: carátula · título/artista · ⋮ con menú
+// Fila de resultado: carátula · título/artista · ⋮ con menú.
+// El estado del menú viene por parámetros (vive en el exterior).
 // ============================================================
 @Composable
 private fun SongRowWithMenu(
     song: Song,
     downloading: Boolean,
+    menuOpen: Boolean,
+    onMenuOpen: () -> Unit,
+    onMenuDismiss: () -> Unit,
     onClick: () -> Unit,
-    onMenu: () -> Unit,
     onPlay: () -> Unit,
     onAdd: () -> Unit,
     onDownload: () -> Unit,
@@ -316,23 +326,23 @@ private fun SongRowWithMenu(
             Text(song.artist, color = TextSecondary, fontSize = 13.sp, maxLines = 1)
         }
         Box {
-            IconButton(onClick = onMenu) {
+            IconButton(onClick = onMenuOpen) {
                 Icon(Icons.Filled.MoreVert, null, tint = Color.White)
             }
-            if (songMenu?.id == song.id) {
+            if (menuOpen) {
                 val downloaded = DownloadRepository.isDownloaded(song.id)
                 DropdownMenu(
                     expanded = true,
-                    onDismissRequest = { songMenu = null },
+                    onDismissRequest = onMenuDismiss,
                     containerColor = CardDark
                 ) {
                     DropdownMenuItem(
                         text = { Text("Reproducir", color = Color.White) },
-                        onClick = { songMenu = null; onPlay() }
+                        onClick = { onMenuDismiss(); onPlay() }
                     )
                     DropdownMenuItem(
                         text = { Text("Añadir a lista", color = Color.White) },
-                        onClick = { songMenu = null; onAdd() }
+                        onClick = { onMenuDismiss(); onAdd() }
                     )
                     DropdownMenuItem(
                         text = {
@@ -344,7 +354,7 @@ private fun SongRowWithMenu(
                             )
                         },
                         onClick = {
-                            songMenu = null
+                            onMenuDismiss()
                             if (downloading) { /* en curso */ }
                             else if (downloaded) onDelete()
                             else onDownload()
