@@ -15,6 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,9 +34,13 @@ import com.example.musica.ui.theme.TextSecondary
 @Composable
 fun ArtistsScreen(nav: NavHostController) {
     val songs by MusicRepository.songs.collectAsState()
-    val repoArtists = songs.groupBy { it.artist }
-        .map { (name, list) -> ArtistItem(name, list.size, name.take(1).uppercase()) }
-        .sortedBy { it.name.lowercase() }
+    // Agrupar y ordenar solo cuando cambia la biblioteca
+    // (antes se repetía en cada recomposición de la pantalla)
+    val repoArtists = remember(songs) {
+        songs.groupBy { it.artist }
+            .map { (name, list) -> ArtistItem(name, list.size, name.take(1).uppercase()) }
+            .sortedBy { it.name.lowercase() }
+    }
     val list = if (repoArtists.isNotEmpty()) repoArtists else artists
 
     Column(Modifier.fillMaxSize().background(NavyBg).padding(16.dp)) {
