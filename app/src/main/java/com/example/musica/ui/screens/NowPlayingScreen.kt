@@ -93,6 +93,8 @@ import androidx.mediarouter.app.MediaRouteButton
 import com.google.android.gms.cast.framework.CastButtonFactory
 import com.google.android.gms.cast.framework.CastContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 @Composable
@@ -113,6 +115,7 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
     val dlVersion by DownloadRepository.version.collectAsState()
     val dlProgress by DownloadRepository.progress.collectAsState()
     val context = LocalContext.current
+    val songs by MusicRepository.songs.collectAsState()
 
     var showLyrics by remember { mutableStateOf(false) }
     var lyrics by remember { mutableStateOf<LyricsResult?>(null) }
@@ -192,7 +195,11 @@ fun NowPlayingScreen(nav: NavHostController, vm: PlayerViewModel) {
 
                         // Carátula con Cast overlay
                         Box(Modifier.fillMaxWidth().aspectRatio(1f)) {
-                            val fresh = MusicRepository.songs.value.firstOrNull { it.id == song.id } ?: song
+                            // Carátula buscada solo cuando cambia la canción o la
+                            // biblioteca (antes se buscaba en CADA tick de posición)
+                            val fresh = remember(song.id, songs) {
+                                songs.firstOrNull { it.id == song.id } ?: song
+                            }
                             CoverImage(fresh, Modifier.fillMaxWidth().aspectRatio(1f),
                                 corner = 14.dp, sample = 1)
 
@@ -763,7 +770,10 @@ private fun LyricsView(
     onClose: () -> Unit,
     onRetry: () -> Unit
 ) {
-    val fresh = MusicRepository.songs.value.firstOrNull { it.id == song.id } ?: song
+    val songs by MusicRepository.songs.collectAsState()
+    val fresh = remember(song.id, songs) {
+        songs.firstOrNull { it.id == song.id } ?: song
+    }
     val scope = rememberCoroutineScope()
 
     var translations by remember { mutableStateOf<List<String>?>(null) }
@@ -949,15 +959,19 @@ private fun SyncedLyrics(
     showTranslation: Boolean
 ) {
     val listState = rememberLazyListState()
-    var current by remember { mutableStateOf(-1) }
 
-    LaunchedEffect(vm.position, lines) {
-        if (lines.isEmpty()) return@LaunchedEffect
-        val idx = lines.indexOfLast { it.timeMs <= vm.position }
-        if (idx != current) {
-            current = idx
-            if (idx >= 0) listState.animateScrollToItem((idx - 2).coerceAtLeast(0))
-        }
+    // La línea activa se calcula FUERA de la recomposición: snapshotFlow
+    // observa la posición (4 ticks por segundo) sin recomponer la pantalla
+    // y distinctUntilChanged solo reacciona cuando cambia de línea activa.
+    // Antes, cada tick reiniciaba el efecto y repetía la búsqueda.
+    val current by produceState(-1, lines) {
+        snapshotFlow { vm.position }
+            .map { pos -> lines.indexOfLast { it.timeMs <= pos } }
+            .distinctUntilChanged()
+            .collect { idx ->
+                value = idx
+                if (idx >= 0) listState.animateScrollToItem((idx - 2).coerceAtLeast(0))
+            }
     }
 
     LazyColumn(
