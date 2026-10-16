@@ -1,5 +1,6 @@
 package com.example.musica.ui.screens
 
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -198,7 +199,8 @@ fun ExploreScreen(nav: NavHostController, vm: PlayerViewModel) {
                                             Toast.LENGTH_SHORT).show()
                                     }
                                 },
-                                onDelete = { songToDownload = s }
+                                onDelete = { songToDownload = s },
+                                onArtist = { nav.navigate("artist/" + Uri.encode(s.artist)) }
                             )
                         }
                     }
@@ -261,7 +263,8 @@ fun ExploreScreen(nav: NavHostController, vm: PlayerViewModel) {
                                             Toast.LENGTH_SHORT).show()
                                     }
                                 },
-                                onDelete = { songToDownload = s }
+                                onDelete = { songToDownload = s },
+                                onArtist = { nav.navigate("artist/" + Uri.encode(s.artist)) }
                             )
                         }
                     }
@@ -298,6 +301,7 @@ fun ExploreScreen(nav: NavHostController, vm: PlayerViewModel) {
 // ============================================================
 // Fila de resultado: carátula · título/artista · ⋮ con menú.
 // El estado del menú viene por parámetros (vive en el exterior).
+// Tocar el nombre del artista abre su pantalla.
 // ============================================================
 @Composable
 private fun SongRowWithMenu(
@@ -310,7 +314,8 @@ private fun SongRowWithMenu(
     onPlay: () -> Unit,
     onAdd: () -> Unit,
     onDownload: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onArtist: () -> Unit
 ) {
     Row(
         Modifier.fillMaxWidth()
@@ -323,7 +328,10 @@ private fun SongRowWithMenu(
         Column(Modifier.weight(1f)) {
             Text(song.title, color = Color.White, fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold, maxLines = 1)
-            Text(song.artist, color = TextSecondary, fontSize = 13.sp, maxLines = 1)
+            Text(song.artist, color = TextSecondary, fontSize = 13.sp, maxLines = 1,
+                modifier = Modifier
+                    .clickable { onArtist() }
+                    .padding(vertical = 2.dp))
         }
         Box {
             IconButton(onClick = onMenuOpen) {
