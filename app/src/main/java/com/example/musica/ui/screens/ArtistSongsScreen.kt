@@ -44,7 +44,9 @@ import com.example.musica.ui.theme.TextSecondary
 @Composable
 fun ArtistSongsScreen(nav: NavHostController, vm: PlayerViewModel, artistName: String) {
     val songs by MusicRepository.songs.collectAsState()
-    val list = songs.filter { it.artist == artistName }
+    // Filtrar solo cuando cambian la biblioteca o el artista
+    // (antes se repetía en cada recomposición de la pantalla)
+    val list = remember(songs, artistName) { songs.filter { it.artist == artistName } }
     var songToAdd by remember { mutableStateOf<Song?>(null) }
     val cover = list.firstOrNull { it.coverPath.isNotBlank() } ?: list.firstOrNull()
 
