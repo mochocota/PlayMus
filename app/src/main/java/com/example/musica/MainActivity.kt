@@ -48,6 +48,7 @@ import com.example.musica.telegram.TelegramConfig
 import com.example.musica.ui.components.MiniPlayer
 import com.example.musica.ui.screens.AlbumSongsScreen
 import com.example.musica.ui.screens.AlbumsScreen
+import com.example.musica.ui.screens.ArtistSongsScreen
 import com.example.musica.ui.screens.ArtistsScreen
 import com.example.musica.ui.screens.DetailScreen
 import com.example.musica.ui.screens.DownloadsScreen
@@ -183,6 +184,9 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
                 SmartListScreen(nav, vm, b.arguments?.getString("type").orEmpty())
             }
             composable("artists") { ArtistsScreen(nav) }
+            composable("artist/{name}") { b ->
+                ArtistSongsScreen(nav, vm, Uri.decode(b.arguments?.getString("name").orEmpty()))
+            }
             composable("settings") { SettingsScreen(nav) }
             composable("genres") { GenresScreen(nav) }
             composable("albums") { AlbumsScreen(nav) }
