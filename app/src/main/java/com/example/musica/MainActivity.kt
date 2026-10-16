@@ -9,6 +9,14 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -164,7 +172,51 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
             }
         }
     ) { pad ->
-        NavHost(nav, startDestination = "splash", modifier = Modifier.padding(pad)) {
+        NavHost(
+            nav,
+            startDestination = "splash",
+            modifier = Modifier.padding(pad),
+            // ---------- Transiciones vistosas en toda la app ----------
+            // · Pantallas normales: entran deslizándose desde la derecha
+            //   con fundido; al volver, se invierten (la actual sale hacia
+            //   la derecha y la anterior entra desde la izquierda).
+            // · El reproductor ("player") entra de abajo hacia arriba como
+            //   una hoja a pantalla completa y al cerrarse baja de nuevo.
+            enterTransition = {
+                when (targetState.destination.route) {
+                    "player" -> slideInVertically(
+                        animationSpec = tween(320, easing = FastOutSlowInEasing)
+                    ) { it } + fadeIn(animationSpec = tween(240))
+                    else -> slideInHorizontally(
+                        animationSpec = tween(300, easing = FastOutSlowInEasing)
+                    ) { it / 4 } + fadeIn(animationSpec = tween(220))
+                }
+            },
+            exitTransition = {
+                when (targetState.destination.route) {
+                    "player" -> fadeOut(animationSpec = tween(180))
+                    else -> slideOutHorizontally(animationSpec = tween(220)) { -it / 6 } +
+                            fadeOut(animationSpec = tween(180))
+                }
+            },
+            popEnterTransition = {
+                when (targetState.destination.route) {
+                    "player" -> fadeIn(animationSpec = tween(240))
+                    else -> slideInHorizontally(
+                        animationSpec = tween(300, easing = FastOutSlowInEasing)
+                    ) { -it / 6 } + fadeIn(animationSpec = tween(220))
+                }
+            },
+            popExitTransition = {
+                when (initialState.destination.route) {
+                    "player" -> slideOutVertically(
+                        animationSpec = tween(320, easing = FastOutSlowInEasing)
+                    ) { it } + fadeOut(animationSpec = tween(240))
+                    else -> slideOutHorizontally(animationSpec = tween(220)) { it / 4 } +
+                            fadeOut(animationSpec = tween(180))
+                }
+            }
+        ) {
             composable("splash") { SplashScreen(nav) }
             composable("home") { HomeScreen(nav, vm) }
             composable("explore") { ExploreScreen(nav, vm) }
