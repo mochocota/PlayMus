@@ -1,5 +1,6 @@
 package com.example.musica.ui.screens
 
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -67,6 +68,11 @@ fun HomeScreen(nav: NavHostController, vm: PlayerViewModel) {
         }
     }
 
+    // Abrir la pantalla de un artista desde su nombre
+    val openArtist: (String) -> Unit = { name ->
+        nav.navigate("artist/" + Uri.encode(name))
+    }
+
     Column(Modifier.fillMaxSize().background(NavyBg)
         .verticalScroll(rememberScrollState()).padding(16.dp)) {
 
@@ -90,7 +96,7 @@ fun HomeScreen(nav: NavHostController, vm: PlayerViewModel) {
             Text("Reproduce canciones y aparecerán aquí.",
                 color = TextSecondary, fontSize = 13.sp)
         } else {
-            Grid3(recentSongs) { s, list ->
+            Grid3(recentSongs, onArtist = openArtist) { s, list ->
                 vm.play(s, list)
                 nav.navigate("player")
             }
@@ -105,7 +111,7 @@ fun HomeScreen(nav: NavHostController, vm: PlayerViewModel) {
             Text("Reproduce canciones y aquí aparecerán tus más escuchadas.",
                 color = TextSecondary, fontSize = 13.sp)
         } else {
-            Grid3(topSongs) { s, list ->
+            Grid3(topSongs, onArtist = openArtist) { s, list ->
                 vm.play(s, list)
                 nav.navigate("player")
             }
@@ -120,7 +126,7 @@ fun HomeScreen(nav: NavHostController, vm: PlayerViewModel) {
             Text("Cuando reproduzcas más canciones te sugeriremos música parecida.",
                 color = TextSecondary, fontSize = 13.sp)
         } else {
-            Grid3(recommended) { s, list ->
+            Grid3(recommended, onArtist = openArtist) { s, list ->
                 vm.play(s, list)
                 nav.navigate("player")
             }
@@ -132,10 +138,16 @@ fun HomeScreen(nav: NavHostController, vm: PlayerViewModel) {
 
 // ============================================================
 // Cuadrícula de 3 columnas (filas de 3 dentro del scroll;
-// cada sección muestra hasta 15 resultados)
+// cada sección muestra hasta 15 resultados).
+// Tocar la tarjeta reproduce la canción; tocar el nombre del
+// artista abre su pantalla.
 // ============================================================
 @Composable
-private fun Grid3(list: List<Song>, onPlay: (Song, List<Song>) -> Unit) {
+private fun Grid3(
+    list: List<Song>,
+    onArtist: (String) -> Unit,
+    onPlay: (Song, List<Song>) -> Unit
+) {
     list.chunked(3).forEach { rowSongs ->
         Row(
             Modifier.fillMaxWidth().padding(vertical = 6.dp),
@@ -153,7 +165,10 @@ private fun Grid3(list: List<Song>, onPlay: (Song, List<Song>) -> Unit) {
                     Text(s.title, color = Color.White, fontSize = 12.sp,
                         maxLines = 1, lineHeight = 14.sp)
                     Text(s.artist, color = TextSecondary, fontSize = 10.sp,
-                        maxLines = 1, lineHeight = 12.sp)
+                        maxLines = 1, lineHeight = 12.sp,
+                        modifier = Modifier
+                            .clickable { onArtist(s.artist) }
+                            .padding(vertical = 2.dp))
                 }
             }
             // Relleno para alinear filas incompletas
