@@ -13,6 +13,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -60,8 +63,13 @@ fun Waveform(color: Color = Purple) {
 @Composable
 fun MiniPlayer(vm: PlayerViewModel, onOpen: () -> Unit) {
     val song = vm.current ?: return
-    // Busca la versión fresca (con carátula) en el repositorio
-    val fresh = MusicRepository.songs.value.firstOrNull { it.id == song.id } ?: song
+    // Carátula fresca: la búsqueda solo se repite cuando cambia la
+    // canción o la biblioteca (antes se recorría toda la lista en
+    // cada recomposición, varias veces por segundo).
+    val songs by MusicRepository.songs.collectAsState()
+    val fresh = remember(song.id, songs) {
+        songs.firstOrNull { it.id == song.id } ?: song
+    }
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
             .clip(RoundedCornerShape(14.dp)).background(CardLighter)
