@@ -43,7 +43,11 @@ import com.example.musica.ui.theme.TextSecondary
 @Composable
 fun GenresScreen(nav: NavHostController) {
     val songs by MusicRepository.songs.collectAsState()
-    val genres = songs.groupingBy { it.genre }.eachCount().toList().sortedBy { it.first.lowercase() }
+    // Contar y ordenar géneros solo cuando cambia la biblioteca
+    // (antes se repetía en cada recomposición de la pantalla)
+    val genres = remember(songs) {
+        songs.groupingBy { it.genre }.eachCount().toList().sortedBy { it.first.lowercase() }
+    }
 
     Column(Modifier.fillMaxSize().background(NavyBg).padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -94,7 +98,10 @@ private fun GenreRow(name: String, count: Int, icon: ImageVector, color: Color, 
 @Composable
 fun SongListScreen(nav: NavHostController, vm: PlayerViewModel, genre: String) {
     val songs by MusicRepository.songs.collectAsState()
-    val list = if (genre == "Todas") songs else songs.filter { it.genre == genre }
+    // Filtrar solo cuando cambian la biblioteca o el género
+    val list = remember(songs, genre) {
+        if (genre == "Todas") songs else songs.filter { it.genre == genre }
+    }
     var songToAdd by remember { mutableStateOf<Song?>(null) }
 
     Column(Modifier.fillMaxSize().background(NavyBg)) {
