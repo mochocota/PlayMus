@@ -752,10 +752,10 @@ object MusicRepository {
     }
 
     // Busca la carátula del álbum online (iTunes, luego Deezer)
-    private fun lookupCoverOnline(title: String, artist: String, album: String): String? {
+        private fun lookupCoverOnline(title: String, artist: String, album: String): String? {
+        // Si el artista es desconocido se busca solo por título
+        val validArtist = artist.takeIf { it.isNotBlank() && it != "Desconocido" } ?: ""
         try {
-            // Si el artista es desconocido se busca solo por título
-            val validArtist = artist.takeIf { it.isNotBlank() && it != "Desconocido" } ?: ""
             val term = when {
                 album.isNotBlank() && validArtist.isNotBlank() -> "$validArtist $album"
                 validArtist.isNotBlank() -> "$validArtist $title"
