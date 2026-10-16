@@ -39,13 +39,20 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 // Caché LRU en memoria: guarda carátulas ya decodificadas.
-// RGB_565 ocupa ~la mitad de memoria: caben muchas más antes
-// de reciclar (menos re-lecturas de disco al desplazarse).
-private val bitmapCache = object : LruCache<String, Bitmap>(24 * 1024 * 1024) {
+// RGB_565 ocupa ~la mitad de memoria y con 40 MB caben tanto las
+// miniaturas de las listas como varias carátulas en alta resolución,
+// así casi no hay re-lecturas de disco al desplazarse.
+private val bitmapCache = object : LruCache<String, Bitmap>(40 * 1024 * 1024) {
     override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
 }
 
-// Decodifica a un tamaño adaptado a las cuadrículas (~130dp)
+// Tamaño de decodificado según uso:
+//  · Listas y miniaturas (sample > 1): 384 px → decodificado ligero
+//  · Pantalla completa (sample = 1): 1024 px → nítida en el reproductor
+private fun decodeTarget(sample: Int) = if (sample <= 1) 1024 else 384
+
+// Decodifica a un tamaño adaptado al destino (con inSampleSize),
+// lo que hace la lectura instantánea aunque el archivo sea 4K
 private fun decodeSampled(path: String, target: Int): Bitmap? {
     return try {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -73,6 +80,10 @@ private fun decodeSampled(path: String, target: Int): Bitmap? {
 //    instante (sin flash de degradado al reciclar).
 // 2) Si no está en caché: decodifica en segundo plano + fundido.
 // 3) Insignia opcional de "disponible offline".
+//
+// El parámetro sample controla la calidad: sample = 1 decodifica en
+// alta resolución (1024 px) para el reproductor y las portadas de
+// álbum; el resto usa 384 px para que las listas vuelen.
 @Composable
 fun CoverImage(
     song: Song?,
@@ -90,8 +101,9 @@ fun CoverImage(
 
     // Solo si NO estaba en caché: decodifica en segundo plano
     if (bmp == null && !path.isNullOrBlank()) {
-        LaunchedEffect(path) {
-            val decoded = withContext(Dispatchers.IO) { decodeSampled(path, 384) }
+        LaunchedEffect(path, sample) {
+            val target = decodeTarget(sample)
+            val decoded = withContext(Dispatchers.IO) { decodeSampled(path, target) }
             if (decoded != null) bitmapCache.put(path, decoded)
             bmp = decoded
         }
