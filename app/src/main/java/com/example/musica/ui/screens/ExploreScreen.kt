@@ -28,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -51,6 +52,8 @@ import com.example.musica.ui.theme.Cyan
 import com.example.musica.ui.theme.NavyBg
 import com.example.musica.ui.theme.Purple
 import com.example.musica.ui.theme.TextSecondary
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.text.Normalizer
 
 private fun norm(s: String): String =
@@ -77,10 +80,14 @@ fun ExploreScreen(nav: NavHostController, vm: PlayerViewModel) {
     var query by remember { mutableStateOf("") }
     var searching by remember { mutableStateOf(false) }
 
-    // Índice precalculado (rápido con miles de canciones)
-    val index = remember(library) {
-        library.map {
-            ExploreItem(it, norm(it.title), norm(it.artist), norm(it.album), norm(it.genre))
+    // Índice precalculado EN SEGUNDO PLANO: normalizar 4 campos por
+    // canción con miles de canciones tarda, y antes se hacía en el
+    // hilo principal (la UI se congelaba tras cada sincronización).
+    val index by produceState(emptyList<ExploreItem>(), library) {
+        value = withContext(Dispatchers.Default) {
+            library.map {
+                ExploreItem(it, norm(it.title), norm(it.artist), norm(it.album), norm(it.genre))
+            }
         }
     }
 
@@ -88,20 +95,27 @@ fun ExploreScreen(nav: NavHostController, vm: PlayerViewModel) {
     val hasQuery = query.isNotBlank()
 
     // ---------- Sugerencias (lista con 🔎, como la imagen) ----------
-    val suggestions = if (hasQuery) buildList {
-        index.forEach { if (it.title.contains(nq)) add(it.song.title) }
-        index.forEach { if (it.artist.contains(nq)) add(it.song.artist) }
-        index.forEach { if (it.album.isNotEmpty() && it.album.contains(nq)) add(it.song.album) }
-        index.forEach { if (it.genre.contains(nq)) add(it.song.genre) }
-    }.distinctBy { norm(it) }.filter { norm(it) != nq }.take(6)
-    else emptyList()
+    // Solo se recalculan si cambia la búsqueda o el índice (antes se
+    // recalculaban en cada recomposición, p. ej. con cada avance de
+    // una descarga en curso).
+    val suggestions = remember(hasQuery, nq, index) {
+        if (!hasQuery) emptyList()
+        else buildList {
+            index.forEach { if (it.title.contains(nq)) add(it.song.title) }
+            index.forEach { if (it.artist.contains(nq)) add(it.song.artist) }
+            index.forEach { if (it.album.isNotEmpty() && it.album.contains(nq)) add(it.song.album) }
+            index.forEach { if (it.genre.contains(nq)) add(it.song.genre) }
+        }.distinctBy { norm(it) }.filter { norm(it) != nq }.take(6)
+    }
 
     // ---------- Resultados en filas ----------
-    val results = if (hasQuery) index.filter {
-        it.title.contains(nq) || it.artist.contains(nq) ||
-                it.album.contains(nq) || it.genre.contains(nq)
-    }.map { it.song }
-    else emptyList()
+    val results = remember(hasQuery, nq, index) {
+        if (!hasQuery) emptyList()
+        else index.filter {
+            it.title.contains(nq) || it.artist.contains(nq) ||
+                    it.album.contains(nq) || it.genre.contains(nq)
+        }.map { it.song }
+    }
 
     var songToAdd by remember { mutableStateOf<Song?>(null) }
     var songMenu by remember { mutableStateOf<Song?>(null) }
