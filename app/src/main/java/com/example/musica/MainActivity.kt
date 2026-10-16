@@ -136,18 +136,21 @@ fun AppRoot(vm: PlayerViewModel = viewModel()) {
             val meta = MusicRepository.pendingCount()
             val online = MusicRepository.pendingOnlineCount()
             val covers = MusicRepository.pendingCoverCount()
+            // Prioridad: metadatos → CARÁTULAS → géneros online.
+            // Las carátulas van antes que la clasificación por internet
+            // para que la biblioteca se vea completa lo antes posible.
             when {
                 meta > 0 -> {
                     try { MusicRepository.scanPending() } catch (_: Exception) {}
                     delay(150)
                 }
+                covers > 0 -> {
+                    try { MusicRepository.fetchMissingCovers() } catch (_: Exception) {}
+                    delay(150)
+                }
                 online > 0 -> {
                     try { MusicRepository.enrichOnline() } catch (_: Exception) {}
                     delay(500)
-                }
-                covers > 0 -> {
-                    try { MusicRepository.fetchMissingCovers() } catch (_: Exception) {}
-                    delay(800)
                 }
                 else -> {
                     delay(60_000)
