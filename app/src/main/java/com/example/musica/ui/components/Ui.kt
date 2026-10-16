@@ -1,5 +1,12 @@
 package com.example.musica.ui.components
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -64,7 +71,7 @@ fun Waveform(color: Color = Purple) {
 fun MiniPlayer(vm: PlayerViewModel, onOpen: () -> Unit) {
     val song = vm.current ?: return
     // Carátula fresca: la búsqueda solo se repite cuando cambia la
-    // canción o la biblioteca (antes se recorría toda la lista en
+    // canción o la biblioteca (antes se recorria toda la lista en
     // cada recomposición, varias veces por segundo).
     val songs by MusicRepository.songs.collectAsState()
     val fresh = remember(song.id, songs) {
@@ -78,9 +85,27 @@ fun MiniPlayer(vm: PlayerViewModel, onOpen: () -> Unit) {
     ) {
         CoverImage(fresh, Modifier.size(40.dp), corner = 10.dp)
         Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
-            Text(song.title, color = Color.White, fontSize = 13.sp, maxLines = 1)
-            Text(song.artist, color = TextSecondary, fontSize = 11.sp, maxLines = 1)
+
+        // Título y artista con animación al cambiar de canción:
+        // lo anterior sube y se desvanece mientras lo nuevo entra desde abajo.
+        AnimatedContent(
+            targetState = song,
+            transitionSpec = {
+                (slideInVertically(
+                    animationSpec = tween(280), initialOffsetY = { it / 2 }
+                ) + fadeIn(animationSpec = tween(280))).togetherWith(
+                    slideOutVertically(
+                        animationSpec = tween(180), targetOffsetY = { -it / 2 }
+                    ) + fadeOut(animationSpec = tween(180))
+                )
+            },
+            modifier = Modifier.weight(1f),
+            label = "MiniPlayerCancion"
+        ) { s ->
+            Column {
+                Text(s.title, color = Color.White, fontSize = 13.sp, maxLines = 1)
+                Text(s.artist, color = TextSecondary, fontSize = 11.sp, maxLines = 1)
+            }
         }
         IconButton(onClick = { vm.toggle() }) {
             Icon(if (vm.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, null, tint = Color.White)
